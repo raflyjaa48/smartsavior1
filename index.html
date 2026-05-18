@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<title>SmartSavior</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#0a1628}
+body{display:flex;justify-content:center;font-family:'Plus Jakarta Sans',system-ui,sans-serif}
+#root{width:100%;max-width:430px;min-height:100vh;position:relative;box-shadow:0 0 80px rgba(0,0,0,.5)}
+::-webkit-scrollbar{display:none}
+*{scrollbar-width:none;-webkit-tap-highlight-color:transparent}
+input,button,select,textarea{font-family:inherit}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+@keyframes scaleIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.7;transform:scale(1.05)}}
+@keyframes scanLine{0%,100%{top:5%}50%{top:88%}}
+@keyframes shimmer{0%{background-position:-300px 0}100%{background-position:300px 0}}
+@keyframes ripple{from{transform:scale(0);opacity:.6}to{transform:scale(3);opacity:0}}
+@keyframes typewriter{from{width:0}to{width:100%}}
+.fade-in{animation:fadeIn .4s ease both}
+.fade-up{animation:fadeUp .4s ease both}
+.scale-in{animation:scaleIn .35s ease both}
+.slide-up{animation:slideUp .32s cubic-bezier(.32,.72,0,1) both}
+.float{animation:float 3s ease-in-out infinite}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const{useState,useEffect,useRef,useCallback,useMemo}=React;
+
+// ═══════════════════════════════════════════════════════════════════
+// CONSTANTS & CONFIG
+// ═══════════════════════════════════════════════════════════════════
+const APP_VERSION="2.0";
+const WA_ADMIN="62818460646";
+const API_URL="https://api.anthropic.com/v1/messages";
+
+const FRIDGE_TYPES={
+  "1":{label:"1 Pintu",emoji:"🚪",desc:"Kulkas mini / single door",
+    sections:["🧊 Freezer","🥛 Rak Atas","🍳 Rak Tengah","🥕 Rak Bawah","🥬 Laci Sayuran"]},
+  "2":{label:"2 Pintu",emoji:"🚪🚪",desc:"Kulkas 2 pintu standar",
+    sections:["🧊 Freezer","🥛 Rak Atas","🍳 Rak Tengah","🥩 Rak Bawah","🥬 Laci Sayuran","🍶 Rak Pintu Atas","🧴 Rak Pintu Bawah"]},
+  "4":{label:"4 Pintu",emoji:"🏠",desc:"Kulkas side-by-side / 4 pintu",
+    sections:["🧊 Freezer Kiri","❄️ Freezer Kanan","🥛 Rak Atas","🍳 Rak Tengah","🥩 Rak Bawah","🥬 Laci Sayuran","🍎 Laci Buah","🧴 Bar Pintu"]}
+};
+
+// Colors
+const makeC=(dark,themeKey)=>{
+  const TH={navy:{p:"#0F2557",l:"#2A5298"},ocean:{p:"#0C4A6E",l:"#0369A1"},forest:{p:"#14532D",l:"#16A34A"},purple:{p:"#581C87",l:"#7C3AED"},sunset:{p:"#7C2D12",l:"#EA580C"}};
+  const th=TH[themeKey]||TH.navy;
+  return{
+    navy:th.p,navyL:th.l,
+    orange:"#F4A623",orangeL:"#FBBF47",
+    bg:dark?"#0F172A":"#EEF2FA",
+    card:dark?"#1E293B":"#FFFFFF",
+    card2:dark?"#334155":"#F1F5FF",
+    border:dark?"#334155":"#E2E8F7",
+    text:dark?"#F1F5F9":th.p,
+    text2:dark?"#CBD5E1":"#374151",
+    muted:dark?"#94A3B8":"#7B8DB0",
+    red:"#EF4444",green:"#22C55E",yellow:"#F59E0B",
+    shadow:dark?"rgba(0,0,0,.4)":"rgba(15,37,87,.1)",
+    overlay:dark?"rgba(0,0,0,.75)":"rgba(15,37,87,.6)",
+  };
+};
+
+// Storage helpers
+const SS={
+  get:(k,def=null)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):def;}catch{return def;}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}},
+  del:(k)=>{try{localStorage.removeItem(k);}catch{}},
+};
+
+// Date helpers
+const NOW=new Date();
+const fmt=d=>d.toISOString().split("T")[0];
+const D=n=>{const x=new Date(NOW);x.setDate(x.getDate()+n);return fmt(x);};
+const daysDiff=d=>Math.ceil((new Date(d)-new Date(fmt(NOW)))/(864e5));
+const fmtDate=d=>{try{return new Date(d).toLocaleDateString("id-ID",{day:"numeric",month:"short",year:"numeric"});}catch{return d;}};
+const calcAge=dob=>{if(!dob)return null;const b=new Date(dob),a=Math.floor((NOW-b)/(365.25*864e5));return a>0?a:null;};
+const randFrom=arr=>arr[Math.floor(Math.random()*arr.length)];
+
+// Expiry status
+const expStatus=(days,warn,C)=>{
+  if(days<0)return{label:"Kadaluarsa",color:C.red,bg:"#FEF2F2"};
+  if(days<=3)return{label:`${days} hari`,color:C.red,bg:"#FEF2F2"};
+  if(days<=(warn||7))return{label:`${days} hari`,color:C.yellow,bg:"#FFFBEB"};
+  return{label:`${days} hari`,color:C.green,bg:"#F0FDF4"};
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// SEED DATA
+// ═══════════════════════════════════════════════════════════════════
+const SEED_STOCK=[
+  {id:1,name:"Indomie Goreng",category:"Mie Instan",qty:5,unit:"pcs",storedDate:D(-8),expiryDate:D(300),photo:"🍜",section:"🍳 Rak Tengah"},
+  {id:2,name:"Susu UHT Full Cream",category:"Minuman",qty:2,unit:"liter",storedDate:D(-3),expiryDate:D(22),photo:"🥛",section:"🥛 Rak Atas"},
+  {id:3,name:"Telur Ayam",category:"Protein",qty:12,unit:"butir",storedDate:D(-6),expiryDate:D(9),photo:"🥚",section:"🥩 Rak Bawah"},
+  {id:4,name:"Kentang",category:"Sayuran",qty:3,unit:"kg",storedDate:D(-10),expiryDate:D(6),photo:"🥔",section:"🥬 Laci Sayuran"},
+  {id:5,name:"Ayam Fillet",category:"Protein",qty:1,unit:"kg",storedDate:D(-1),expiryDate:D(3),photo:"🍗",section:"🧊 Freezer"},
+  {id:6,name:"Bawang Merah",category:"Bumbu",qty:0.5,unit:"kg",storedDate:D(-4),expiryDate:D(14),photo:"🧅",section:"🥬 Laci Sayuran"},
+  {id:7,name:"Tomat",category:"Sayuran",qty:8,unit:"buah",storedDate:D(-2),expiryDate:D(5),photo:"🍅",section:"🥬 Laci Sayuran"},
+  {id:8,name:"Tahu Putih",category:"Protein",qty:4,unit:"buah",storedDate:D(-1),expiryDate:D(4),photo:"🫘",section:"🍳 Rak Tengah"},
+  {id:9,name:"Wortel",category:"Sayuran",qty:6,unit:"buah",storedDate:D(-3),expiryDate:D(11),photo:"🥕",section:"🥬 Laci Sayuran"},
+];
+
+const RECIPES=[
+  {id:1,name:"Indomie Telur Spesial",emoji:"🍜",time:"10 mnt",diff:"Mudah",ing:["Indomie Goreng","Telur Ayam"],yt:"indomie goreng telur spesial",steps:[{s:1,d:"Didihkan 400ml air, masak mie 3 menit."},{s:2,d:"Kocok 2 telur dengan garam dan merica."},{s:3,d:"Orak-arik telur di wajan."},{s:4,d:"Campur mie dengan bumbu sachet."},{s:5,d:"Letakkan telur di atas mie."},{s:6,d:"Taburi bawang goreng, sajikan!"}]},
+  {id:2,name:"Ayam Kentang Goreng",emoji:"🍗",time:"25 mnt",diff:"Sedang",ing:["Ayam Fillet","Kentang"],yt:"ayam kentang goreng crispy",steps:[{s:1,d:"Lumuri ayam dengan bumbu halus."},{s:2,d:"Potong kentang, rendam air garam."},{s:3,d:"Goreng kentang hingga golden."},{s:4,d:"Goreng ayam hingga matang."},{s:5,d:"Goreng bawang merah iris tipis."},{s:6,d:"Tata di piring, sajikan!"}]},
+  {id:3,name:"Perkedel Kentang",emoji:"🥔",time:"20 mnt",diff:"Mudah",ing:["Kentang","Telur Ayam"],yt:"perkedel kentang crispy",steps:[{s:1,d:"Kukus kentang hingga empuk, haluskan."},{s:2,d:"Campur dengan telur, garam, merica."},{s:3,d:"Bentuk bulat pipih."},{s:4,d:"Celup telur, goreng api sedang."},{s:5,d:"Balik hingga kecokelatan."},{s:6,d:"Sajikan dengan sambal!"}]},
+  {id:4,name:"Tumis Tomat Telur",emoji:"🍳",time:"15 mnt",diff:"Mudah",ing:["Tomat","Telur Ayam","Bawang Merah"],yt:"tumis tomat telur",steps:[{s:1,d:"Tumis bawang merah hingga harum."},{s:2,d:"Masukkan tomat potong."},{s:3,d:"Bumbui garam dan gula."},{s:4,d:"Masak tomat hingga layu."},{s:5,d:"Tuang kocokan telur."},{s:6,d:"Aduk hingga matang, sajikan!"}]},
+  {id:5,name:"Nasi Goreng Kampung",emoji:"🍚",time:"15 mnt",diff:"Mudah",ing:["Telur Ayam","Bawang Merah"],yt:"nasi goreng kampung sederhana",steps:[{s:1,d:"Tumis bawang merah dan putih."},{s:2,d:"Orak-arik telur setengah matang."},{s:3,d:"Masukkan nasi dingin."},{s:4,d:"Bumbui kecap, garam, merica."},{s:5,d:"Masak api besar 3 menit."},{s:6,d:"Sajikan dengan kerupuk!"}]},
+  {id:6,name:"Sup Tomat Kentang",emoji:"🍲",time:"30 mnt",diff:"Sedang",ing:["Tomat","Kentang","Bawang Merah"],yt:"sup tomat kentang segar",steps:[{s:1,d:"Tumis bawang hingga harum."},{s:2,d:"Masukkan tomat, aduk layu."},{s:3,d:"Tuang 600ml air, didihkan."},{s:4,d:"Masukkan kentang dadu."},{s:5,d:"Bumbui, masak 15 menit."},{s:6,d:"Taburi seledri, sajikan!"}]},
+  {id:7,name:"Soto Ayam Bening",emoji:"🍜",time:"35 mnt",diff:"Sedang",ing:["Ayam Fillet","Wortel"],yt:"soto ayam bening sederhana",steps:[{s:1,d:"Rebus ayam dengan serai dan salam."},{s:2,d:"Suwir ayam, simpan kaldu."},{s:3,d:"Tumis bumbu halus hingga matang."},{s:4,d:"Masukkan ke kaldu bersama wortel."},{s:5,d:"Masak hingga empuk."},{s:6,d:"Sajikan dengan tauge dan telur!"}]},
+  {id:8,name:"Omelet Tomat",emoji:"🍳",time:"10 mnt",diff:"Mudah",ing:["Telur Ayam","Tomat"],yt:"omelet tomat fluffy",steps:[{s:1,d:"Kocok 3 telur dengan garam."},{s:2,d:"Potong tomat dadu kecil."},{s:3,d:"Panaskan butter di wajan."},{s:4,d:"Tuang telur, biarkan set."},{s:5,d:"Taburi tomat."},{s:6,d:"Lipat, masak 1 menit. Sajikan!"}]},
+  {id:9,name:"Ayam Bakar Kecap",emoji:"🔥",time:"40 mnt",diff:"Sedang",ing:["Ayam Fillet","Bawang Merah"],yt:"ayam bakar kecap juicy",steps:[{s:1,d:"Lumuri ayam dengan kecap dan bumbu."},{s:2,d:"Diamkan 30 menit."},{s:3,d:"Panggang di pan bergaris."},{s:4,d:"Oles bumbu tiap 5 menit."},{s:5,d:"Balik hingga kedua sisi matang."},{s:6,d:"Sajikan dengan lalapan!"}]},
+  {id:10,name:"Capcay Sayuran",emoji:"🥦",time:"20 mnt",diff:"Mudah",ing:["Wortel","Tomat","Bawang Merah"],yt:"capcay sayuran saus tiram",steps:[{s:1,d:"Potong semua sayuran."},{s:2,d:"Tumis bawang hingga harum."},{s:3,d:"Masukkan wortel, tumis 3 menit."},{s:4,d:"Tambah saus tiram dan garam."},{s:5,d:"Masukkan sayuran lain."},{s:6,d:"Aduk, tambah maizena. Sajikan!"}]},
+  {id:11,name:"Kentang Balado",emoji:"🌶️",time:"25 mnt",diff:"Sedang",ing:["Kentang","Tomat","Bawang Merah"],yt:"kentang balado pedas kering",steps:[{s:1,d:"Goreng kentang iris hingga matang."},{s:2,d:"Haluskan cabai dan tomat."},{s:3,d:"Tumis bumbu hingga matang."},{s:4,d:"Masukkan kentang goreng."},{s:5,d:"Aduk rata dengan garam dan gula."},{s:6,d:"Masak hingga kering. Sajikan!"}]},
+  {id:12,name:"Semur Tahu",emoji:"🫘",time:"25 mnt",diff:"Mudah",ing:["Tahu Putih","Bawang Merah"],yt:"semur tahu kecap sederhana",steps:[{s:1,d:"Goreng tahu setengah matang."},{s:2,d:"Tumis bawang merah dan putih."},{s:3,d:"Tambah kecap manis dan air."},{s:4,d:"Masukkan tahu."},{s:5,d:"Masak api kecil hingga meresap."},{s:6,d:"Taburi bawang goreng, sajikan!"}]},
+  {id:13,name:"Mie Goreng Spesial",emoji:"🍝",time:"15 mnt",diff:"Mudah",ing:["Indomie Goreng","Telur Ayam","Tomat"],yt:"mie goreng spesial enak",steps:[{s:1,d:"Rebus mie setengah matang."},{s:2,d:"Goreng telur mata sapi."},{s:3,d:"Tumis bawang dan tomat dadu."},{s:4,d:"Masukkan mie + bumbu sachet."},{s:5,d:"Tumis api besar 2 menit."},{s:6,d:"Letakkan telur di atas, sajikan!"}]},
+  {id:14,name:"Sup Wortel Ayam",emoji:"🍵",time:"35 mnt",diff:"Sedang",ing:["Wortel","Ayam Fillet","Bawang Merah"],yt:"sup wortel ayam bening",steps:[{s:1,d:"Rebus ayam, ambil kaldunya."},{s:2,d:"Tumis bawang, masuk kaldu."},{s:3,d:"Potong wortel, masukkan."},{s:4,d:"Bumbui garam dan merica."},{s:5,d:"Rebus 15 menit."},{s:6,d:"Taburi seledri, sajikan panas!"}]},
+  {id:15,name:"Tumis Buncis Wortel",emoji:"🥕",time:"15 mnt",diff:"Mudah",ing:["Wortel","Bawang Merah"],yt:"tumis buncis wortel sederhana",steps:[{s:1,d:"Potong wortel dan buncis serong."},{s:2,d:"Tumis bawang merah dan cabai."},{s:3,d:"Masukkan wortel, tumis 3 menit."},{s:4,d:"Bumbui saus tiram dan garam."},{s:5,d:"Masak hingga layu tapi crispy."},{s:6,d:"Sajikan sebagai lauk!"}]},
+];
+
+const AI_PRODUCTS=[
+  {name:"Indomie Goreng Rasa Ayam Bawang",brand:"Indomie",cat:"Mie Instan",emoji:"🍜",exp:"12 bulan dari produksi",store:"Simpan di tempat kering, hindari sinar matahari"},
+  {name:"Susu UHT Full Cream 1L",brand:"Ultra Milk",cat:"Minuman",emoji:"🥛",exp:"6 bulan / 3–5 hari (sudah dibuka)",store:"Simpan di kulkas setelah dibuka"},
+  {name:"Kecap Manis Bango 600ml",brand:"Bango",cat:"Bumbu",emoji:"🫙",exp:"18 bulan dari produksi",store:"Suhu ruang, jauh dari panas"},
+  {name:"Pocari Sweat 500ml",brand:"Pocari",cat:"Minuman Isotonik",emoji:"🥤",exp:"12 bulan dari produksi",store:"Lebih enak diminum dingin"},
+  {name:"Chitato Sapi Panggang",brand:"Chitato",cat:"Camilan",emoji:"🥔",exp:"6 bulan dari produksi",store:"Tutup rapat, hindari kelembaban"},
+  {name:"ABC Sardines Tomato Sauce",brand:"ABC",cat:"Kaleng",emoji:"🐟",exp:"24 bulan dari produksi",store:"Pindah ke wadah tertutup setelah dibuka"},
+];
+const QR_PRODUCTS=[
+  {name:"Indomie Goreng Spesial",brand:"Indomie",cat:"Mie Instan",emoji:"🍜",exp:"12 bulan",store:"Simpan di tempat kering"},
+  {name:"ABC Kecap Manis 275ml",brand:"ABC",cat:"Bumbu",emoji:"🫙",exp:"18 bulan",store:"Suhu ruang"},
+  {name:"Mie Sedaap Goreng",brand:"Wings Food",cat:"Mie Instan",emoji:"🍜",exp:"12 bulan",store:"Simpan di tempat kering"},
+];
+
+// ═══════════════════════════════════════════════════════════════════
+// ICONS
+// ═══════════════════════════════════════════════════════════════════
+const Ic={
+  Home:()=><svg viewBox="0 0 24 24" fill="currentColor" w="22" h="22" width="22" height="22"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>,
+  Scan:()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" width="23" height="23"><rect x="3" y="3" width="5" height="5" rx="1"/><rect x="16" y="3" width="5" height="5" rx="1"/><rect x="3" y="16" width="5" height="5" rx="1"/><line x1="16" y1="16" x2="21" y2="16"/><line x1="16" y1="19" x2="21" y2="19"/><line x1="19" y1="21" x2="21" y2="21"/></svg>,
+  User:()=><svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>,
+  Settings:()=><svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>,
+  Fridge:()=><svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M18 2.01L6 2c-1.1 0-2 .89-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.11-.9-1.99-2-1.99zM18 11H6V4h12v7zm0 9H6v-7h12v7zM8 5h2v4H8zm0 8h2v3H8z"/></svg>,
+  Plus:()=><svg viewBox="0 0 24 24" fill="currentColor" width="17" height="17"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>,
+  Edit:()=><svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>,
+  Trash:()=><svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>,
+  Camera:()=><svg viewBox="0 0 24 24" fill="currentColor" width="21" height="21"><path d="M12 15.2a3.2 3.2 0 100-6.4 3.2 3.2 0 000 6.4z"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>,
+  QR:()=><svg viewBox="0 0 24 24" fill="currentColor" width="21" height="21"><path d="M3 11h8V3H3v8zm2-6h4v4H5V5zM3 21h8v-8H3v8zm2-6h4v4H5v-4zM13 3v8h8V3h-8zm6 6h-4V5h4v4zM13 13h2v2h-2zM15 15h2v2h-2zM13 17h2v2h-2zM17 13h2v2h-2zM19 15h2v2h-2zM17 17h2v2h-2zM19 19h2v2h-2z"/></svg>,
+  Close:()=><svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>,
+  Bell:()=><svg viewBox="0 0 24 24" fill="currentColor" width="17" height="17"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6V11c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>,
+  Chat:()=><svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>,
+  WA:()=><svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.025.507 3.934 1.395 5.608L.057 23.854a.5.5 0 00.61.61l6.246-1.338A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.885 0-3.656-.52-5.17-1.426l-.37-.22-3.827.82.834-3.751-.24-.386A9.94 9.94 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>,
+  Send:()=><svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>,
+  Bot:()=><svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M20 9V7c0-1.1-.9-2-2-2h-3c0-1.66-1.34-3-3-3S9 3.34 9 5H6c-1.1 0-2 .9-2 2v2c-1.66 0-3 1.34-3 3s1.34 3 3 3v4c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-4c1.66 0 3-1.34 3-3s-1.34-3-3-3zM7 13.5c-.83 0-1.5-.67-1.5-1.5S6.17 10.5 7 10.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm5 4l-1.5-3h3L14 17.5h-2zm3-4c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>,
+  Chef:()=><svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M18.06 22.99h1.66c.84 0 1.53-.64 1.63-1.46L23 5.05h-5V1h-1.97v4.05h-4.97l.3 2.34c1.71.47 3.31 1.32 4.27 2.26 1.44 1.42 2.43 2.89 2.43 5.29v8.05zM1 21.99V21h15.03v.99c0 .55-.45 1-1.01 1H2.01c-.56 0-1.01-.45-1.01-1zm15.03-7c0-8-15.03-8-15.03 0h15.03zM1.02 17h15v2h-15z"/></svg>,
+  Warn:()=><svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>,
+  YT:()=><svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M21.58 7.19a2.76 2.76 0 00-1.94-1.95C18.01 5 12 5 12 5s-6.01 0-7.64.24a2.76 2.76 0 00-1.94 1.95A28.6 28.6 0 002 12a28.6 28.6 0 00.42 4.81 2.76 2.76 0 001.94 1.95C5.99 19 12 19 12 19s6.01 0 7.64-.24a2.76 2.76 0 001.94-1.95A28.6 28.6 0 0022 12a28.6 28.6 0 00-.42-4.81zM10 15V9l5.2 3-5.2 3z"/></svg>,
+  Eye:()=><svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>,
+  EyeOff:()=><svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>,
+  Search:()=><svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>,
+  Logout:()=><svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>,
+  Arrow:()=><svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>,
+  Check:()=><svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>,
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// SPLASH SCREEN
+// ═══════════════════════════════════════════════════════════════════
+function SplashScreen({onDone}){
+  const[step,setStep]=useState(0);
+  useEffect(()=>{
+    const t1=setTimeout(()=>setStep(1),600);
+    const t2=setTimeout(()=>setStep(2),1400);
+    const t3=setTimeout(()=>setStep(3),2200);
+    const t4=setTimeout(()=>onDone(),3200);
+    return()=>{clearTimeout(t1);clearTimeout(t2);clearTimeout(t3);clearTimeout(t4);};
+  },[]);
+  return(
+    <div style={{height:"100vh",background:"linear-gradient(160deg,#0F2557 0%,#1a3a7a 50%,#0F2557 100%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden"}}>
+      {/* BG circles */}
+      {[[200,"-40px","-40px","rgba(244,166,35,.08)"],[300,"auto","-60px","rgba(42,82,152,.3)"],[150,"30px","auto","rgba(244,166,35,.05)"]].map(([s,t,b,bg],i)=>(
+        <div key={i} style={{position:"absolute",width:s,height:s,borderRadius:"50%",background:bg,top:t,bottom:b,right:i===1?"−60px":undefined,left:i===2?"30px":undefined}}/>
+      ))}
+      {/* Logo */}
+      <div style={{animation:"float 3s ease-in-out infinite",marginBottom:24}}>
+        <div style={{width:90,height:90,borderRadius:28,background:"linear-gradient(135deg,rgba(255,255,255,.15),rgba(255,255,255,.05))",border:"1.5px solid rgba(255,255,255,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:44,boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>🧠</div>
+      </div>
+      <div style={{opacity:step>=1?1:0,transform:step>=1?"translateY(0)":"translateY(10px)",transition:"all .5s ease",textAlign:"center",marginBottom:8}}>
+        <h1 style={{fontSize:32,fontWeight:900,color:"#fff",letterSpacing:-1,margin:0}}>Smart<span style={{color:"#F4A623"}}>Savior</span></h1>
+      </div>
+      <div style={{opacity:step>=2?1:0,transform:step>=2?"translateY(0)":"translateY(8px)",transition:"all .5s ease .1s",textAlign:"center",marginBottom:40}}>
+        <p style={{color:"rgba(255,255,255,.6)",fontSize:13,margin:0,fontWeight:500}}>Solusi Cerdas Kulkas Anda</p>
+      </div>
+      {step>=3&&<div style={{display:"flex",gap:6}}>
+        {[0,1,2].map(i=><div key={i} style={{width:i===1?20:6,height:6,borderRadius:3,background:i===1?"#F4A623":"rgba(255,255,255,.3)",transition:"all .3s"}}/>)}
+      </div>}
+      <p style={{position:"absolute",bottom:30,color:"rgba(255,255,255,.3)",fontSize:11,fontWeight:600}}>Kelompok Batmen · Binus University</p>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// AUTH SCREEN (LOGIN / REGISTER)
+// ═══════════════════════════════════════════════════════════════════
+function AuthScreen({onLogin}){
+  const[isLogin,setIsLogin]=useState(true);
+  const[form,setForm]=useState({username:"",password:"",name:"",confirmPassword:""});
+  const[showPw,setShowPw]=useState(false);
+  const[err,setErr]=useState("");
+  const[loading,setLoading]=useState(false);
+  const set=k=>e=>setForm(p=>({...p,[k]:e.target.value}));
+
+  const doLogin=()=>{
+    setErr("");
+    if(!form.username||!form.password){setErr("Username dan password wajib diisi");return;}
+    const users=SS.get("ss_users",[]);
+    const user=users.find(u=>u.username===form.username&&u.password===form.password);
+    if(!user){setErr("Username atau password salah");return;}
+    setLoading(true);
+    setTimeout(()=>{SS.set("ss_current_user",user.username);onLogin(user);},800);
+  };
+  const doRegister=()=>{
+    setErr("");
+    if(!form.username||!form.password||!form.name){setErr("Semua field wajib diisi");return;}
+    if(form.password!==form.confirmPassword){setErr("Password tidak cocok");return;}
+    if(form.password.length<4){setErr("Password minimal 4 karakter");return;}
+    const users=SS.get("ss_users",[]);
+    if(users.find(u=>u.username===form.username)){setErr("Username sudah terdaftar");return;}
+    const newUser={username:form.username,password:form.password,name:form.name,email:"",phone:"",dob:"",photo:null,fridgeType:"2",onboardingDone:false,createdAt:new Date().toISOString()};
+    SS.set("ss_users",[...users,newUser]);
+    SS.set("ss_current_user",form.username);
+    setLoading(true);
+    setTimeout(()=>onLogin(newUser),800);
+  };
+
+  const inp={width:"100%",border:"1.5px solid rgba(255,255,255,.15)",borderRadius:12,padding:"12px 14px",fontSize:14,outline:"none",color:"#fff",background:"rgba(255,255,255,.08)",fontFamily:"inherit"};
+
+  return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#0F2557,#1a3a7a 60%,#0F2557)",display:"flex",flexDirection:"column",padding:"0 0 40px"}}>
+      {/* Header */}
+      <div style={{padding:"60px 24px 30px",textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:12}}>🧠</div>
+        <h1 style={{color:"#fff",fontSize:26,fontWeight:900,margin:"0 0 6px",letterSpacing:-.5}}>Smart<span style={{color:"#F4A623"}}>Savior</span></h1>
+        <p style={{color:"rgba(255,255,255,.55)",fontSize:13,margin:0}}>Kelola kulkas Anda dengan cerdas</p>
+      </div>
+
+      {/* Tab Switch */}
+      <div style={{margin:"0 24px 24px",background:"rgba(255,255,255,.08)",borderRadius:14,padding:4,display:"flex"}}>
+        {["Masuk","Daftar"].map((l,i)=>(
+          <button key={l} onClick={()=>{setIsLogin(i===0);setErr("");}} style={{flex:1,padding:"10px",borderRadius:10,border:"none",background:(i===0&&isLogin)||(i===1&&!isLogin)?"#fff":"none",color:(i===0&&isLogin)||(i===1&&!isLogin)?"#0F2557":"rgba(255,255,255,.6)",fontWeight:700,fontSize:14,cursor:"pointer",transition:"all .2s"}}>{l}</button>
+        ))}
+      </div>
+
+      {/* Form */}
+      <div style={{padding:"0 24px",flex:1}}>
+        {!isLogin&&<div style={{marginBottom:14}}>
+          <p style={{color:"rgba(255,255,255,.7)",fontSize:12,fontWeight:700,marginBottom:6}}>Nama Lengkap</p>
+          <input placeholder="Nama kamu" value={form.name} onChange={set("name")} style={inp}/>
+        </div>}
+        <div style={{marginBottom:14}}>
+          <p style={{color:"rgba(255,255,255,.7)",fontSize:12,fontWeight:700,marginBottom:6}}>Username</p>
+          <input placeholder="Masukkan username" value={form.username} onChange={set("username")} style={inp} autoCapitalize="none"/>
+        </div>
+        <div style={{marginBottom:14}}>
+          <p style={{color:"rgba(255,255,255,.7)",fontSize:12,fontWeight:700,marginBottom:6}}>Password</p>
+          <div style={{position:"relative"}}>
+            <input type={showPw?"text":"password"} placeholder="Masukkan password" value={form.password} onChange={set("password")} style={{...inp,paddingRight:46}}/>
+            <button onClick={()=>setShowPw(p=>!p)} style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"rgba(255,255,255,.5)"}}>{showPw?<Ic.EyeOff/>:<Ic.Eye/>}</button>
+          </div>
+        </div>
+        {!isLogin&&<div style={{marginBottom:14}}>
+          <p style={{color:"rgba(255,255,255,.7)",fontSize:12,fontWeight:700,marginBottom:6}}>Konfirmasi Password</p>
+          <input type="password" placeholder="Ulangi password" value={form.confirmPassword} onChange={set("confirmPassword")} style={inp}/>
+        </div>}
+        {err&&<div style={{background:"rgba(239,68,68,.15)",border:"1px solid rgba(239,68,68,.3)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+          <p style={{color:"#FCA5A5",fontSize:12,margin:0,fontWeight:600}}>⚠️ {err}</p>
+        </div>}
+        <button onClick={isLogin?doLogin:doRegister} disabled={loading} style={{width:"100%",background:loading?"rgba(244,166,35,.5)":"linear-gradient(135deg,#F4A623,#FBBF47)",border:"none",borderRadius:14,padding:"14px",color:loading?"rgba(255,255,255,.7)":"#0F2557",fontWeight:900,fontSize:15,cursor:loading?"not-allowed":"pointer",marginTop:8,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+          {loading?<><div style={{width:16,height:16,borderRadius:"50%",border:"2px solid #0F2557",borderTopColor:"transparent",animation:"spin .7s linear infinite"}}/> Memproses...</>:(isLogin?"Masuk ke SmartSavior 🚀":"Buat Akun Sekarang 🎉")}
+        </button>
+        {isLogin&&<p style={{textAlign:"center",color:"rgba(255,255,255,.4)",fontSize:12,marginTop:16}}>Belum punya akun? <button onClick={()=>{setIsLogin(false);setErr("");}} style={{background:"none",border:"none",color:"#F4A623",fontWeight:700,cursor:"pointer",fontSize:12}}>Daftar sekarang</button></p>}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ONBOARDING
+// ═══════════════════════════════════════════════════════════════════
+function OnboardingScreen({user,onDone}){
+  const[step,setStep]=useState(0);
+  const[data,setData]=useState({fridgeType:"2",nickname:user.name||"",favFood:"",goal:"waste"});
+  const set=k=>v=>setData(p=>({...p,[k]:v}));
+
+  const GOALS=[{v:"waste",l:"🌱 Kurangi Food Waste",d:"Ingatkan sebelum makanan basi"},{v:"budget",l:"💰 Hemat Budget Belanja",d:"Kontrol pengeluaran makanan"},{v:"health",l:"🥗 Pola Makan Sehat",d:"Kelola bahan bergizi"},{v:"umkm",l:"🏪 Kelola Usaha F&B",d:"Untuk warteg / catering"}];
+  const FOODS=["🍚 Nasi & Mie","🥩 Daging & Ayam","🥬 Sayur & Buah","🥛 Susu & Telur","🧂 Bumbu & Saus","🍰 Camilan & Minuman"];
+
+  const STEPS=[
+    // Step 0: Welcome
+    ()=>(
+      <div className="scale-in" style={{textAlign:"center",padding:"20px 0"}}>
+        <div style={{fontSize:64,marginBottom:20,animation:"float 3s infinite"}}>👋</div>
+        <h2 style={{color:"#fff",fontSize:22,fontWeight:900,marginBottom:10}}>Halo, {user.name}!</h2>
+        <p style={{color:"rgba(255,255,255,.65)",fontSize:14,lineHeight:1.6,maxWidth:280,margin:"0 auto 30px"}}>Sebelum mulai, kami ingin mengenal kamu lebih dekat agar SmartSavior bisa dipersonalisasi untukmu.</p>
+        <button onClick={()=>setStep(1)} style={btnW}>Mulai Personalisasi →</button>
+      </div>
+    ),
+    // Step 1: Fridge Type
+    ()=>(
+      <div className="fade-up">
+        <p style={{color:"rgba(255,255,255,.6)",fontSize:12,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:.8}}>Step 1 dari 3</p>
+        <h2 style={{color:"#fff",fontSize:20,fontWeight:900,marginBottom:6}}>Jenis Kulkas Kamu</h2>
+        <p style={{color:"rgba(255,255,255,.6)",fontSize:13,marginBottom:24}}>Kami akan menyesuaikan sekat dan rak sesuai kulkasmu</p>
+        <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:28}}>
+          {Object.entries(FRIDGE_TYPES).map(([k,v])=>(
+            <button key={k} onClick={()=>set("fridgeType")(k)} style={{background:data.fridgeType===k?"rgba(244,166,35,.2)":"rgba(255,255,255,.06)",border:`2px solid ${data.fridgeType===k?"#F4A623":"rgba(255,255,255,.12)"}`,borderRadius:16,padding:"14px 16px",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:14,transition:"all .2s"}}>
+              <div style={{width:50,height:50,borderRadius:14,background:"rgba(255,255,255,.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{v.emoji}</div>
+              <div style={{flex:1}}>
+                <p style={{color:"#fff",fontWeight:800,margin:0,fontSize:15}}>{v.label}</p>
+                <p style={{color:"rgba(255,255,255,.55)",margin:"2px 0 0",fontSize:12}}>{v.desc}</p>
+                <p style={{color:"rgba(244,166,35,.8)",margin:"3px 0 0",fontSize:11}}>{v.sections.length} sekat tersedia</p>
+              </div>
+              {data.fridgeType===k&&<div style={{width:22,height:22,borderRadius:"50%",background:"#F4A623",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",flexShrink:0}}><Ic.Check/></div>}
+            </button>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={()=>setStep(0)} style={btnOutline}>← Kembali</button>
+          <button onClick={()=>setStep(2)} style={{...btnW,flex:2}}>Lanjut →</button>
+        </div>
+      </div>
+    ),
+    // Step 2: Goal
+    ()=>(
+      <div className="fade-up">
+        <p style={{color:"rgba(255,255,255,.6)",fontSize:12,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:.8}}>Step 2 dari 3</p>
+        <h2 style={{color:"#fff",fontSize:20,fontWeight:900,marginBottom:6}}>Tujuan Utamamu</h2>
+        <p style={{color:"rgba(255,255,255,.6)",fontSize:13,marginBottom:24}}>SmartSavior akan disesuaikan dengan kebutuhanmu</p>
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:28}}>
+          {GOALS.map(g=>(
+            <button key={g.v} onClick={()=>set("goal")(g.v)} style={{background:data.goal===g.v?"rgba(244,166,35,.2)":"rgba(255,255,255,.06)",border:`2px solid ${data.goal===g.v?"#F4A623":"rgba(255,255,255,.12)"}`,borderRadius:14,padding:"13px 16px",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:12,transition:"all .2s"}}>
+              <div style={{flex:1}}>
+                <p style={{color:"#fff",fontWeight:700,margin:0,fontSize:14}}>{g.l}</p>
+                <p style={{color:"rgba(255,255,255,.5)",margin:"2px 0 0",fontSize:12}}>{g.d}</p>
+              </div>
+              {data.goal===g.v&&<div style={{width:20,height:20,borderRadius:"50%",background:"#F4A623",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",flexShrink:0}}><Ic.Check/></div>}
+            </button>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={()=>setStep(1)} style={btnOutline}>← Kembali</button>
+          <button onClick={()=>setStep(3)} style={{...btnW,flex:2}}>Lanjut →</button>
+        </div>
+      </div>
+    ),
+    // Step 3: Done
+    ()=>(
+      <div className="scale-in" style={{textAlign:"center",padding:"20px 0"}}>
+        <div style={{fontSize:64,marginBottom:20}}>🎉</div>
+        <h2 style={{color:"#fff",fontSize:22,fontWeight:900,marginBottom:10}}>Semua Siap!</h2>
+        <div style={{background:"rgba(255,255,255,.06)",borderRadius:16,padding:"16px",marginBottom:24,textAlign:"left"}}>
+          {[["🧊 Kulkas",FRIDGE_TYPES[data.fridgeType].label],["🎯 Tujuan",GOALS.find(g=>g.v===data.goal)?.l||""]].map(([l,v])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
+              <span style={{color:"rgba(255,255,255,.6)",fontSize:13}}>{l}</span>
+              <span style={{color:"#F4A623",fontWeight:700,fontSize:13}}>{v}</span>
+            </div>
+          ))}
+        </div>
+        <p style={{color:"rgba(255,255,255,.6)",fontSize:13,marginBottom:28,lineHeight:1.6}}>SmartSavior siap membantu kamu mengelola stok kulkas dengan lebih cerdas!</p>
+        <button onClick={()=>onDone(data)} style={btnW}>Mulai Gunakan SmartSavior 🚀</button>
+      </div>
+    ),
+  ];
+
+  const btnW={width:"100%",background:"linear-gradient(135deg,#F4A623,#FBBF47)",border:"none",borderRadius:14,padding:"14px",color:"#0F2557",fontWeight:900,fontSize:15,cursor:"pointer"};
+  const btnOutline={background:"rgba(255,255,255,.1)",border:"1.5px solid rgba(255,255,255,.2)",borderRadius:14,padding:"14px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",flex:1};
+
+  return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#0F2557,#1a3a7a 60%,#0F2557)",padding:"52px 22px 40px"}}>
+      {/* Progress */}
+      <div style={{display:"flex",gap:4,marginBottom:32}}>
+        {[0,1,2,3].map(i=><div key={i} style={{flex:1,height:4,borderRadius:2,background:i<=step?"#F4A623":"rgba(255,255,255,.15)",transition:"background .3s"}}/>)}
+      </div>
+      {STEPS[step]&&STEPS[step]()}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BOTTOM NAV
+// ═══════════════════════════════════════════════════════════════════
+function BottomNav({active,setActive,C,showChat,setShowChat}){
+  const tabs=[{id:"home",l:"Home",ic:<Ic.Home/>},{id:"scan",l:"Scan",ic:<Ic.Scan/>},{id:"profile",l:"Profil",ic:<Ic.User/>}];
+  return(
+    <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:C.card,borderTop:`1.5px solid ${C.border}`,display:"flex",alignItems:"center",paddingBottom:12,paddingTop:6,zIndex:100,boxShadow:`0 -4px 24px ${C.shadow}`}}>
+      {tabs.map((t,i)=>{
+        const isScan=t.id==="scan",isA=active===t.id;
+        return(
+          <button key={t.id} onClick={()=>setActive(t.id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",border:"none",background:"none",cursor:"pointer",gap:3,padding:"2px 0"}}>
+            {isScan
+              ?<div style={{width:54,height:54,borderRadius:"50%",background:`linear-gradient(135deg,${C.navyL},${C.navy})`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 6px 20px ${C.navy}70`,color:"#fff",marginTop:-22,border:`3px solid ${C.card}`}}><Ic.Scan/></div>
+              :<div style={{color:isA?C.orange:C.muted,transition:"color .2s"}}>{t.ic}</div>
+            }
+            <span style={{fontSize:10,fontWeight:700,color:isScan?(isA?C.navy:C.muted):(isA?C.orange:C.muted)}}>{t.l}</span>
+            {!isScan&&isA&&<div style={{width:4,height:4,borderRadius:"50%",background:C.orange,marginTop:1}}/>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RECIPE MODAL
+// ═══════════════════════════════════════════════════════════════════
+function RecipeModal({recipe,C,onClose}){
+  return(
+    <div style={{position:"fixed",inset:0,background:C.overlay,zIndex:300,display:"flex",alignItems:"flex-end"}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} className="slide-up" style={{background:C.card,borderRadius:"24px 24px 0 0",padding:"24px 20px 44px",width:"100%",maxHeight:"82vh",overflowY:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+          <div><span style={{fontSize:44}}>{recipe.emoji}</span>
+            <h2 style={{margin:"8px 0 3px",fontWeight:900,fontSize:18,color:C.text}}>{recipe.name}</h2>
+            <p style={{margin:0,color:C.muted,fontSize:12}}>{recipe.time} · {recipe.diff}</p>
+          </div>
+          <button onClick={onClose} style={{background:C.card2,border:"none",borderRadius:10,padding:8,cursor:"pointer",color:C.text}}><Ic.Close/></button>
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:18}}>
+          {recipe.ing.map(i=><span key={i} style={{background:`${C.orange}22`,color:C.navy,borderRadius:20,padding:"4px 12px",fontSize:12,fontWeight:700}}>{i}</span>)}
+        </div>
+        <h3 style={{fontSize:14,fontWeight:800,color:C.text,marginBottom:12}}>Langkah Memasak</h3>
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
+          {recipe.steps.map(s=>(
+            <div key={s.s} style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+              <div style={{minWidth:28,height:28,borderRadius:"50%",background:`linear-gradient(135deg,${C.navy},${C.navyL})`,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,flexShrink:0}}>{s.s}</div>
+              <p style={{margin:0,fontSize:13,color:C.text2,lineHeight:1.6,paddingTop:4}}>{s.d}</p>
+            </div>
+          ))}
+        </div>
+        <a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(recipe.yt||recipe.name)}`} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#FF0000",color:"#fff",borderRadius:14,padding:"13px",textDecoration:"none",fontWeight:800,fontSize:14}}>
+          <Ic.YT/> Tonton Tutorial di YouTube
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ADD / EDIT ITEM MODAL
+// ═══════════════════════════════════════════════════════════════════
+function AddEditModal({item,C,sections,defUnit,onClose,onSave}){
+  const EMOJIS=["📦","🍜","🥛","🥚","🥔","🍗","🧅","🍅","🥩","🧀","🥕","🌽","🍎","🍌","🥦","🧄","🫙","🥫","🍞","🧈","🫐","🍊","🥝","🫑","🥬","🌶️","🫘","🐟","🌭","🥐"];
+  const[form,setForm]=useState(item||{name:"",category:"",qty:1,unit:defUnit||"pcs",storedDate:fmt(NOW),expiryDate:"",photo:"📦",section:sections[0]||""});
+  const s=k=>v=>setForm(p=>({...p,[k]:v}));
+  const inp={width:"100%",border:`1.5px solid ${C.border}`,borderRadius:12,padding:"10px 14px",fontSize:14,outline:"none",color:C.text,background:C.card};
+  return(
+    <div style={{position:"fixed",inset:0,background:C.overlay,zIndex:400,display:"flex",alignItems:"flex-end"}}>
+      <div className="slide-up" style={{background:C.card,borderRadius:"24px 24px 0 0",padding:"22px 18px 44px",width:"100%",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <h3 style={{margin:0,fontSize:17,fontWeight:800,color:C.text}}>{item?"Edit Item":"Item Baru"}</h3>
+          <button onClick={onClose} style={{background:C.card2,border:"none",borderRadius:10,padding:8,cursor:"pointer",color:C.text}}><Ic.Close/></button>
+        </div>
+        <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:8}}>Pilih Ikon</p>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
+          {EMOJIS.map(e=><button key={e} onClick={()=>s("photo")(e)} style={{fontSize:22,background:form.photo===e?`${C.orange}28`:C.card2,border:form.photo===e?`2px solid ${C.orange}`:"2px solid transparent",borderRadius:10,padding:"4px 5px",cursor:"pointer"}}>{e}</button>)}
+        </div>
+        {[["Nama Produk *","name","text","cth. Indomie Goreng"],["Kategori","category","text","cth. Mie Instan"],["Satuan","unit","text","pcs / kg / liter"]].map(([l,k,t,ph])=>(
+          <div key={k} style={{marginBottom:10}}>
+            <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:4}}>{l}</p>
+            <input type={t} value={form[k]||""} placeholder={ph} onChange={e=>s(k)(e.target.value)} style={inp}/>
+          </div>
+        ))}
+        <div style={{marginBottom:10}}>
+          <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:4}}>Jumlah</p>
+          <input type="number" value={form.qty} min={0} step="0.5" onChange={e=>s("qty")(parseFloat(e.target.value)||0)} style={inp}/>
+        </div>
+        {sections.length>0&&<div style={{marginBottom:10}}>
+          <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:6}}>📍 Sekat Kulkas</p>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {sections.map(sec=><button key={sec} onClick={()=>s("section")(sec)} style={{background:form.section===sec?`${C.navy}22`:C.card2,border:`1.5px solid ${form.section===sec?C.navy:C.border}`,borderRadius:20,padding:"5px 10px",fontSize:11,fontWeight:700,color:form.section===sec?C.navy:C.muted,cursor:"pointer"}}>{sec}</button>)}
+          </div>
+        </div>}
+        <div style={{marginBottom:10}}>
+          <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:4}}>Tanggal Disimpan</p>
+          <input type="date" value={form.storedDate} onChange={e=>s("storedDate")(e.target.value)} style={inp}/>
+        </div>
+        <div style={{marginBottom:20}}>
+          <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:4}}>Tanggal Kadaluarsa *</p>
+          <input type="date" value={form.expiryDate} onChange={e=>s("expiryDate")(e.target.value)} style={inp}/>
+        </div>
+        <button onClick={()=>{if(form.name&&form.expiryDate)onSave(form);}} style={{width:"100%",background:`linear-gradient(135deg,${C.navy},${C.navyL})`,border:"none",borderRadius:14,padding:"14px",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer"}}>
+          {item?"Simpan Perubahan ✓":"Tambah ke Storage ✓"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MY STORAGE MODAL
+// ═══════════════════════════════════════════════════════════════════
+function StorageModal({stock,setStock,C,settings,sections,onClose}){
+  const[addEdit,setAddEdit]=useState(null);
+  const[filter,setFilter]=useState("all");
+  const[search,setSearch]=useState("");
+  const[secView,setSecView]=useState(false);
+  const warnDays=settings.warnDays||7;
+  const cats=["all",...new Set(stock.map(i=>i.category))];
+  const filtered=stock
+    .filter(i=>filter==="all"||i.category===filter)
+    .filter(i=>i.name.toLowerCase().includes(search.toLowerCase()));
+  const lowStock=stock.filter(i=>i.qty<=2&&i.qty>0);
+
+  return(
+    <div style={{position:"fixed",inset:0,background:C.overlay,zIndex:200,display:"flex",alignItems:"flex-end"}}>
+      <div className="slide-up" style={{background:C.bg,borderRadius:"24px 24px 0 0",width:"100%",maxHeight:"93vh",overflowY:"auto"}}>
+        <div style={{background:`linear-gradient(135deg,${C.navy},${C.navyL})`,padding:"18px 16px 14px",borderRadius:"24px 24px 0 0",position:"sticky",top:0,zIndex:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <Ic.Fridge/><h2 style={{color:"#fff",margin:0,fontSize:17,fontWeight:800}}>My Storage</h2>
+              <span style={{background:"rgba(255,255,255,.2)",color:"#fff",borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:700}}>{stock.length}</span>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setSecView(p=>!p)} style={{background:secView?"#F4A623":"rgba(255,255,255,.15)",border:"none",borderRadius:10,padding:"6px 10px",color:secView?"#0F2557":"#fff",fontWeight:700,cursor:"pointer",fontSize:11}}>🧊 Sekat</button>
+              <button onClick={()=>setAddEdit("add")} style={{background:"#F4A623",border:"none",borderRadius:10,padding:"6px 12px",color:"#0F2557",fontWeight:700,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",gap:4}}><Ic.Plus/>Tambah</button>
+              <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:10,padding:8,cursor:"pointer",color:"#fff"}}><Ic.Close/></button>
+            </div>
+          </div>
+          <div style={{background:"rgba(255,255,255,.12)",borderRadius:10,display:"flex",alignItems:"center",gap:8,padding:"8px 12px",marginBottom:10}}>
+            <Ic.Search/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari stok..." style={{background:"none",border:"none",outline:"none",color:"#fff",fontSize:13,flex:1,fontFamily:"inherit"}}/>
+          </div>
+          {!secView&&<div style={{display:"flex",gap:7,overflowX:"auto"}}>
+            {cats.map(c=><button key={c} onClick={()=>setFilter(c)} style={{background:filter===c?"#F4A623":"rgba(255,255,255,.15)",border:"none",borderRadius:20,padding:"4px 12px",color:filter===c?"#0F2557":"#fff",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>{c==="all"?"Semua":c}</button>)}
+          </div>}
+        </div>
+
+        <div style={{padding:"12px 14px 100px"}}>
+          {lowStock.length>0&&<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:14,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
+            <Ic.Warn/><div><p style={{margin:0,fontWeight:700,fontSize:12,color:"#92400E"}}>Stok Hampir Habis!</p><p style={{margin:0,fontSize:11,color:"#B45309"}}>{lowStock.map(i=>i.name).join(", ")}</p></div>
+          </div>}
+
+          {secView
+            ? sections.map(sec=>{
+                const items=stock.filter(i=>i.section===sec);
+                return(
+                  <div key={sec} style={{marginBottom:14}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                      <span style={{fontSize:16}}>{sec.split(" ")[0]}</span>
+                      <h3 style={{margin:0,fontSize:14,fontWeight:800,color:C.text,flex:1}}>{sec.slice(sec.indexOf(" ")+1)}</h3>
+                      <span style={{background:`${C.navy}15`,color:C.navy,borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:700}}>{items.length} item</span>
+                    </div>
+                    {items.length===0
+                      ?<div style={{background:C.card,borderRadius:12,padding:"12px",textAlign:"center",color:C.muted,fontSize:12,border:`1.5px dashed ${C.border}`}}>Sekat kosong</div>
+                      :items.map(item=>{
+                        const days=daysDiff(item.expiryDate);
+                        const st=expStatus(days,warnDays,C);
+                        return(
+                          <div key={item.id} style={{background:C.card,borderRadius:12,padding:"10px 12px",display:"flex",alignItems:"center",gap:10,marginBottom:6,border:`1.5px solid ${days<=3?st.color+"40":C.border}`}}>
+                            <span style={{fontSize:24}}>{item.photo}</span>
+                            <div style={{flex:1,minWidth:0}}>
+                              <p style={{margin:"0 0 1px",fontWeight:700,fontSize:12,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</p>
+                              <p style={{margin:0,fontSize:11,color:C.muted}}>{item.qty} {item.unit}</p>
+                            </div>
+                            <span style={{background:st.bg,color:st.color,borderRadius:20,padding:"2px 7px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>{st.label}</span>
+                          </div>
+                        );
+                      })
+                    }
+                  </div>
+                );
+              })
+            : filtered.length===0
+              ?<div style={{textAlign:"center",padding:"40px 20px",color:C.muted}}><div style={{fontSize:44}}>📦</div><p style={{fontWeight:700,margin:"12px 0 4px",color:C.text}}>Belum ada stok</p><p style={{fontSize:12}}>Tambah item atau scan barang</p></div>
+              :filtered.map(item=>{
+                const days=daysDiff(item.expiryDate);
+                const st=expStatus(days,warnDays,C);
+                return(
+                  <div key={item.id} style={{background:C.card,borderRadius:16,padding:"12px 14px",boxShadow:`0 2px 10px ${C.shadow}`,border:`1.5px solid ${days<=3?st.color+"50":C.border}`,marginBottom:10}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                      <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                        <span style={{fontSize:30}}>{item.photo}</span>
+                        <div>
+                          <p style={{margin:"0 0 2px",fontWeight:800,fontSize:13,color:C.text}}>{item.name}</p>
+                          <p style={{margin:"0 0 2px",fontSize:11,color:C.muted}}>{item.category}</p>
+                          {item.section&&<span style={{background:`${C.navy}14`,color:C.navy,borderRadius:20,padding:"1px 7px",fontSize:10,fontWeight:700}}>{item.section}</span>}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5}}>
+                        <span style={{fontWeight:900,fontSize:14,color:C.navy}}>{item.qty}<span style={{fontSize:10,fontWeight:600}}> {item.unit}</span></span>
+                        <span style={{background:st.bg,color:st.color,borderRadius:20,padding:"2px 7px",fontSize:10,fontWeight:700}}>{st.label}</span>
+                        <div style={{display:"flex",gap:4}}>
+                          <button onClick={()=>setAddEdit(item)} style={{background:C.card2,border:"none",borderRadius:7,padding:"4px 7px",cursor:"pointer",color:C.text}}><Ic.Edit/></button>
+                          <button onClick={()=>setStock(p=>p.filter(i=>i.id!==item.id))} style={{background:"#FEF2F2",border:"none",borderRadius:7,padding:"4px 7px",cursor:"pointer",color:C.red}}><Ic.Trash/></button>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:12,marginTop:8,borderTop:`1px solid ${C.border}`,paddingTop:7}}>
+                      <span style={{fontSize:10,color:C.muted}}>📅 Disimpan: {fmtDate(item.storedDate)}</span>
+                      <span style={{fontSize:10,color:C.muted}}>⏰ Exp: {fmtDate(item.expiryDate)}</span>
+                    </div>
+                  </div>
+                );
+              })
+          }
+        </div>
+      </div>
+      {addEdit&&<AddEditModal item={addEdit==="add"?null:addEdit} C={C} sections={sections} defUnit={settings.defUnit} onClose={()=>setAddEdit(null)} onSave={ni=>{
+        if(addEdit==="add")setStock(p=>[...p,{...ni,id:Date.now()}]);
+        else setStock(p=>p.map(i=>i.id===ni.id?ni:i));
+        setAddEdit(null);
+      }}/>}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HOME SCREEN
+// ═══════════════════════════════════════════════════════════════════
+function HomeScreen({stock,user,settings,C,sections,onOpenStorage,onOpenSettings,onGoProfile}){
+  const[selRecipe,setSelRecipe]=useState(null);
+  const[manualScroll,setManualScroll]=useState(false);
+  const carRef=useRef(null);
+  const msRef=useRef(null);
+  const h=NOW.getHours();
+  const greet=h<11?"Selamat Pagi ☀️":h<15?"Selamat Siang 🌤️":h<18?"Selamat Sore 🌇":"Selamat Malam 🌙";
+  const warnDays=settings.warnDays||7;
+  const expiring=stock.filter(i=>{const d=daysDiff(i.expiryDate);return d>=0&&d<=(warnDays);});
+  const expired=stock.filter(i=>daysDiff(i.expiryDate)<0);
+  const available=stock.filter(i=>daysDiff(i.expiryDate)>=0);
+  const spd=settings.scrollSpeed==="slow"?0.5:settings.scrollSpeed==="fast"?2:1.1;
+
+  useEffect(()=>{
+    if(!settings.autoScroll||manualScroll)return;
+    const el=carRef.current;if(!el)return;
+    let dir=1;
+    const iv=setInterval(()=>{
+      el.scrollLeft+=dir*spd;
+      if(el.scrollLeft>=el.scrollWidth-el.clientWidth-2)dir=-1;
+      if(el.scrollLeft<=0)dir=1;
+    },30);
+    return()=>clearInterval(iv);
+  },[settings.autoScroll,manualScroll,spd]);
+
+  const onCarInteract=()=>{
+    setManualScroll(true);clearTimeout(msRef.current);
+    msRef.current=setTimeout(()=>setManualScroll(false),5000);
+  };
+
+  const dateStr=NOW.toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+
+  return(
+    <div style={{paddingBottom:90,background:C.bg,minHeight:"100vh"}}>
+      {/* Header */}
+      <div style={{background:`linear-gradient(150deg,${C.navy} 0%,${C.navyL} 100%)`,padding:"52px 18px 22px",borderRadius:"0 0 30px 30px",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",top:-40,right:-40,width:160,height:160,borderRadius:"50%",background:"rgba(255,255,255,.05)"}}/>
+        <div style={{position:"absolute",bottom:-20,left:-20,width:100,height:100,borderRadius:"50%",background:"rgba(255,255,255,.03)"}}/>
+        <p style={{color:"rgba(255,255,255,.45)",fontSize:11,fontWeight:600,marginBottom:12,textTransform:"uppercase",letterSpacing:.8}}>{dateStr}</p>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div onClick={onGoProfile} style={{cursor:"pointer",position:"relative",flexShrink:0}}>
+              {user?.photo
+                ?<img src={user.photo} style={{width:50,height:50,borderRadius:"50%",objectFit:"cover",border:"2.5px solid rgba(255,255,255,.5)"}} alt="avatar"/>
+                :<div style={{width:50,height:50,borderRadius:"50%",background:"rgba(255,255,255,.18)",border:"2.5px solid rgba(255,255,255,.3)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>👤</div>
+              }
+              <div style={{position:"absolute",bottom:0,right:0,width:13,height:13,borderRadius:"50%",background:"#22C55E",border:`2px solid ${C.navy}`}}/>
+            </div>
+            <div>
+              <p style={{color:"rgba(255,255,255,.6)",fontSize:11,margin:0,fontWeight:500}}>{greet}</p>
+              <h2 style={{color:"#fff",fontSize:19,fontWeight:900,margin:"2px 0 0",letterSpacing:-.4,lineHeight:1.1}}>{user?.name||"Kuple"} 👋</h2>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={onOpenSettings} style={{background:"rgba(255,255,255,.13)",border:"1.5px solid rgba(255,255,255,.22)",borderRadius:12,width:38,height:38,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#fff"}}>
+              <Ic.Settings/>
+            </button>
+            <button onClick={onOpenStorage} style={{background:"rgba(255,255,255,.13)",border:"1.5px solid rgba(255,255,255,.22)",borderRadius:12,padding:"0 11px",height:38,display:"flex",alignItems:"center",gap:5,cursor:"pointer",color:"#fff"}}>
+              <Ic.Fridge/><span style={{fontSize:11,fontWeight:700}}>Storage</span>
+            </button>
+          </div>
+        </div>
+        {/* Stats */}
+        <div style={{display:"flex",gap:8}}>
+          {[{l:"Total Stok",v:available.length,e:"📦",bg:"rgba(255,255,255,.1)"},{l:"Mau Expired",v:expiring.length,e:"⚠️",bg:"rgba(244,166,35,.18)"},{l:"Kadaluarsa",v:expired.length,e:"❌",bg:"rgba(239,68,68,.15)"}].map(s=>(
+            <div key={s.l} style={{flex:1,background:s.bg,borderRadius:14,padding:"10px 6px",textAlign:"center",border:"1px solid rgba(255,255,255,.1)"}}>
+              <div style={{fontSize:18}}>{s.e}</div>
+              <div style={{color:"#fff",fontSize:20,fontWeight:900,lineHeight:1.1}}>{s.v}</div>
+              <div style={{color:"rgba(255,255,255,.55)",fontSize:9,fontWeight:700,marginTop:1}}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:"14px 14px 0"}}>
+        {/* Fridge Sections Preview */}
+        <div style={{marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:16}}>🧊</span><h2 style={{fontSize:14,fontWeight:800,color:C.text,margin:0}}>Isi Kulkas</h2></div>
+            <button onClick={onOpenStorage} style={{background:"none",border:"none",cursor:"pointer",color:C.navyL,fontSize:12,fontWeight:700}}>Kelola →</button>
+          </div>
+          <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}>
+            {sections.slice(0,5).map(sec=>{
+              const items=stock.filter(i=>i.section===sec);
+              const hasWarning=items.some(i=>{const d=daysDiff(i.expiryDate);return d>=0&&d<=warnDays;});
+              const hasExpired=items.some(i=>daysDiff(i.expiryDate)<0);
+              return(
+                <div key={sec} onClick={onOpenStorage} style={{minWidth:100,background:C.card,borderRadius:14,padding:"10px 10px",flexShrink:0,cursor:"pointer",border:`1.5px solid ${hasExpired?C.red+"40":hasWarning?C.yellow+"40":C.border}`,boxShadow:`0 2px 8px ${C.shadow}`}}>
+                  <div style={{fontSize:20,marginBottom:4}}>{sec.split(" ")[0]}</div>
+                  <p style={{margin:"0 0 2px",fontSize:11,fontWeight:700,color:C.text,lineHeight:1.2}}>{sec.slice(sec.indexOf(" ")+1)}</p>
+                  <p style={{margin:0,fontSize:10,color:C.muted}}>{items.length} item</p>
+                  {(hasWarning||hasExpired)&&<div style={{width:7,height:7,borderRadius:"50%",background:hasExpired?C.red:C.yellow,marginTop:4}}/>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Alerts */}
+        {[...expired,...expiring].length>0&&(
+          <div style={{marginBottom:16}} className="fade-up">
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}><Ic.Bell/><h2 style={{fontSize:14,fontWeight:800,color:C.text,margin:0}}>Peringatan Stok</h2></div>
+            {[...expired,...expiring].slice(0,4).map(item=>{
+              const days=daysDiff(item.expiryDate);
+              const st=expStatus(days,warnDays,C);
+              return(
+                <div key={item.id} style={{background:st.bg,borderRadius:14,padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",border:`1.5px solid ${st.color}30`,marginBottom:7}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:26}}>{item.photo}</span>
+                    <div><p style={{margin:0,fontWeight:700,fontSize:12,color:C.text}}>{item.name}</p><p style={{margin:0,fontSize:11,color:C.muted}}>{item.qty} {item.unit} · {item.section}</p></div>
+                  </div>
+                  <span style={{background:st.color,color:"#fff",borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>{days<0?"Kadaluarsa":st.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Recipe Carousel */}
+        <div style={{marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:5}}><Ic.Chef/><h2 style={{fontSize:14,fontWeight:800,color:C.text,margin:0}}>Resep dari Stokmu</h2></div>
+            <span style={{fontSize:10,color:C.muted,fontWeight:600}}>{settings.autoScroll&&!manualScroll?"🔄 Auto":"👆 Manual"}</span>
+          </div>
+          <div ref={carRef} onTouchStart={onCarInteract} onMouseDown={onCarInteract} style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:6,cursor:"grab"}}>
+            {RECIPES.map(r=>(
+              <div key={r.id} onClick={()=>setSelRecipe(r)} style={{minWidth:150,background:C.card,borderRadius:18,padding:"13px 12px",boxShadow:`0 3px 14px ${C.shadow}`,cursor:"pointer",border:`1.5px solid ${C.border}`,flexShrink:0,transition:"transform .15s,box-shadow .15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";}}
+                onMouseLeave={e=>{e.currentTarget.style.transform="none";}}>
+                <div style={{fontSize:32,marginBottom:7}}>{r.emoji}</div>
+                <p style={{margin:"0 0 2px",fontWeight:800,fontSize:12,color:C.text,lineHeight:1.3}}>{r.name}</p>
+                <p style={{margin:"0 0 7px",fontSize:10,color:C.muted}}>{r.time} · {r.diff}</p>
+                <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+                  {r.ing.slice(0,2).map(i=><span key={i} style={{background:`${C.navy}12`,borderRadius:20,padding:"2px 7px",fontSize:9,color:C.navy,fontWeight:700}}>{i}</span>)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Stock grid */}
+        <div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <h2 style={{fontSize:14,fontWeight:800,color:C.text,margin:0}}>Stok Tersedia</h2>
+            <button onClick={onOpenStorage} style={{background:"none",border:"none",cursor:"pointer",color:C.navyL,fontSize:12,fontWeight:700}}>Lihat Semua →</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {available.slice(0,4).map(item=>{
+              const days=daysDiff(item.expiryDate);
+              const st=expStatus(days,warnDays,C);
+              return(
+                <div key={item.id} style={{background:C.card,borderRadius:16,padding:"12px",boxShadow:`0 2px 10px ${C.shadow}`,border:`1.5px solid ${C.border}`}}>
+                  <span style={{fontSize:28}}>{item.photo}</span>
+                  <p style={{margin:"6px 0 2px",fontWeight:700,fontSize:12,color:C.text,lineHeight:1.3}}>{item.name}</p>
+                  <p style={{margin:"0 0 4px",fontSize:11,color:C.muted}}>{item.qty} {item.unit}</p>
+                  <span style={{display:"inline-block",background:st.bg,color:st.color,borderRadius:20,padding:"2px 7px",fontSize:10,fontWeight:700}}>{st.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      {selRecipe&&<RecipeModal recipe={selRecipe} C={C} onClose={()=>setSelRecipe(null)}/>}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SCAN SCREEN
+// ═══════════════════════════════════════════════════════════════════
+function ScanScreen({stock,setStock,C,settings,sections}){
+  const[mode,setMode]=useState(null);
+  const[phase,setPhase]=useState("idle");
+  const[result,setResult]=useState(null);
+  const[img,setImg]=useState(null);
+  const[sf,setSf]=useState({qty:1,unit:settings.defUnit||"pcs",expiryDate:"",section:sections[0]||""});
+  const[pct,setPct]=useState(0);
+  const vidRef=useRef(null);
+  const canRef=useRef(null);
+  const stmRef=useRef(null);
+  const filRef=useRef(null);
+
+  const stopCam=useCallback(()=>{
+    if(stmRef.current){stmRef.current.getTracks().forEach(t=>t.stop());stmRef.current=null;}
+    setPhase(p=>p==="scanning"?"idle":p);
+  },[]);
+  useEffect(()=>()=>stopCam(),[stopCam]);
+
+  const startCam=async()=>{
+    try{
+      const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+      stmRef.current=s;if(vidRef.current)vidRef.current.srcObject=s;setPhase("scanning");
+    }catch{alert("Kamera butuh HTTPS.\nDeploy ke Netlify untuk mengaktifkan kamera.\nSementara gunakan 'Upload dari Galeri' ✅");}
+  };
+  const capturePhoto=()=>{
+    const cv=canRef.current,vd=vidRef.current;if(!cv||!vd)return;
+    cv.width=vd.videoWidth;cv.height=vd.videoHeight;cv.getContext("2d").drawImage(vd,0,0);
+    setImg(cv.toDataURL("image/jpeg",.8));stopCam();runAnalyze();
+  };
+  const handleFile=e=>{
+    const f=e.target.files[0];if(!f)return;
+    const r=new FileReader();r.onload=ev=>{setImg(ev.target.result);runAnalyze();};r.readAsDataURL(f);
+  };
+  const runAnalyze=()=>{
+    setPhase("analyzing");setPct(0);
+    const iv=setInterval(()=>setPct(p=>Math.min(p+3,96)),70);
+    setTimeout(()=>{clearInterval(iv);setPct(100);setTimeout(()=>{setResult({type:"ai",...randFrom(AI_PRODUCTS)});setPhase("result");},300);},2500);
+  };
+  const runQR=()=>{
+    setPhase("analyzing");setPct(0);
+    const iv=setInterval(()=>setPct(p=>Math.min(p+5,96)),55);
+    setTimeout(()=>{clearInterval(iv);setPct(100);setTimeout(()=>{setResult({type:"qr",...randFrom(QR_PRODUCTS)});setPhase("result");stopCam();},300);},1800);
+  };
+  const reset=()=>{setMode(null);setPhase("idle");setResult(null);setImg(null);setSf({qty:1,unit:settings.defUnit||"pcs",expiryDate:"",section:sections[0]||""});setPct(0);stopCam();};
+  const save=()=>{
+    if(!result||!sf.expiryDate)return;
+    setStock(p=>[...p,{id:Date.now(),name:result.name,category:result.cat,qty:sf.qty,unit:sf.unit,storedDate:fmt(NOW),expiryDate:sf.expiryDate,photo:result.emoji||"📦",section:sf.section}]);
+    reset();
+  };
+
+  const btnP={background:`linear-gradient(135deg,${C.navy},${C.navyL})`,border:"none",borderRadius:14,padding:"14px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",width:"100%"};
+  const btnS={background:`${C.orange}18`,border:`1.5px solid ${C.orange}`,borderRadius:14,padding:"12px",color:C.navy,fontWeight:700,cursor:"pointer",width:"100%"};
+  const inp={width:"100%",border:`1.5px solid ${C.border}`,borderRadius:10,padding:"10px 12px",fontSize:14,outline:"none",color:C.text,background:C.card};
+
+  return(
+    <div style={{paddingBottom:90,minHeight:"100vh",background:C.bg}}>
+      <div style={{background:`linear-gradient(135deg,${C.navy},${C.navyL})`,padding:"52px 18px 22px",borderRadius:"0 0 28px 28px"}}>
+        <h2 style={{color:"#fff",margin:0,fontSize:20,fontWeight:900}}>Scan & Tambah</h2>
+        <p style={{color:"rgba(255,255,255,.6)",margin:"4px 0 0",fontSize:13}}>Scan QR code atau foto kemasan via AI</p>
+      </div>
+
+      <div style={{padding:"18px 14px"}}>
+        {!mode&&(<div className="fade-up" style={{display:"flex",flexDirection:"column",gap:12}}>
+          {[{id:"qr",ic:<Ic.QR/>,t:"Scan QR / Barcode",d:"Scan barcode produk",b:"QR"},{id:"ai",ic:<Ic.Camera/>,t:"Foto Kemasan (AI Vision)",d:"Foto kemasan, AI deteksi otomatis",b:"AI"}].map(o=>(
+            <button key={o.id} onClick={()=>setMode(o.id)} style={{background:C.card,border:`1.5px solid ${C.border}`,borderRadius:18,padding:"16px 18px",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:14,boxShadow:`0 3px 14px ${C.shadow}`}}>
+              <div style={{width:50,height:50,borderRadius:14,background:`linear-gradient(135deg,${C.navyL},${C.navy})`,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",flexShrink:0}}>{o.ic}</div>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}><p style={{margin:0,fontWeight:800,fontSize:14,color:C.text}}>{o.t}</p><span style={{background:`${C.orange}22`,color:C.orange,borderRadius:6,padding:"1px 7px",fontSize:10,fontWeight:800}}>{o.b}</span></div>
+                <p style={{margin:"2px 0 0",fontSize:12,color:C.muted}}>{o.d}</p>
+              </div>
+              <Ic.Arrow/>
+            </button>
+          ))}
+          <button onClick={()=>setMode("manual")} style={{background:"none",border:`1.5px dashed ${C.border}`,borderRadius:18,padding:"14px",cursor:"pointer",color:C.muted,fontSize:14,fontWeight:700}}>+ Input Manual</button>
+        </div>)}
+
+        {mode==="manual"&&<AddEditModal C={C} sections={sections} defUnit={settings.defUnit} onClose={reset} onSave={item=>{setStock(p=>[...p,item]);reset();}}/>}
+
+        {(mode==="qr"||mode==="ai")&&phase!=="result"&&(
+          <div className="fade-up">
+            <button onClick={reset} style={{background:"none",border:"none",color:C.navyL,fontWeight:700,cursor:"pointer",marginBottom:14,fontSize:13}}>← Kembali</button>
+            <div style={{background:"#000",borderRadius:20,overflow:"hidden",marginBottom:14,position:"relative",height:240}}>
+              <video ref={vidRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              {phase==="idle"&&<div style={{position:"absolute",inset:0,background:"#0F2557CC",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10}}>
+                <div style={{fontSize:40}}>{mode==="qr"?"📷":"🤖"}</div>
+                <p style={{color:"#fff",fontWeight:700,margin:0,textAlign:"center",padding:"0 24px",fontSize:13}}>{mode==="qr"?"Arahkan ke QR code / barcode":"AI siap menganalisis kemasan"}</p>
+              </div>}
+              {phase==="scanning"&&mode==="qr"&&<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+                <div style={{position:"relative",width:170,height:170}}>
+                  <div style={{position:"absolute",inset:0,border:`3px solid ${C.orange}`,borderRadius:14,boxShadow:"0 0 0 2000px rgba(0,0,0,.5)"}}/>
+                  <div style={{position:"absolute",left:0,right:0,height:2,background:C.orange,top:"50%",animation:"scanLine 1.6s ease-in-out infinite"}}/>
+                </div>
+              </div>}
+              {phase==="analyzing"&&<div style={{position:"absolute",inset:0,background:"#0F2557EE",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
+                <div style={{fontSize:36}}>{mode==="qr"?"🔍":"🤖"}</div>
+                <p style={{color:"#fff",fontWeight:700,margin:0,fontSize:14}}>Menganalisis... {pct}%</p>
+                <div style={{width:160,height:6,background:"rgba(255,255,255,.2)",borderRadius:3,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${C.navyL},${C.orange})`,borderRadius:3,transition:"width .12s"}}/>
+                </div>
+              </div>}
+            </div>
+            <canvas ref={canRef} style={{display:"none"}}/>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {phase==="idle"&&<button onClick={startCam} style={btnP}>📷 Aktifkan Kamera</button>}
+              {phase==="scanning"&&mode==="ai"&&<button onClick={capturePhoto} style={{...btnP,background:`linear-gradient(135deg,${C.orange},#FBBF47)`}}>📸 Ambil Foto & Analisis</button>}
+              {phase==="scanning"&&mode==="qr"&&<button onClick={runQR} style={{...btnP,background:`linear-gradient(135deg,${C.orange},#FBBF47)`}}>🔍 Scan Sekarang (Demo)</button>}
+              {phase==="idle"&&mode==="ai"&&<button onClick={()=>filRef.current?.click()} style={btnS}>🖼️ Upload dari Galeri</button>}
+              {phase==="scanning"&&<button onClick={stopCam} style={{background:"#FEF2F2",border:"none",borderRadius:14,padding:"12px",color:C.red,fontWeight:700,cursor:"pointer"}}>✕ Stop Kamera</button>}
+              <input ref={filRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>
+            </div>
+          </div>
+        )}
+
+        {phase==="result"&&result&&(<div className="fade-up">
+          <div style={{background:C.card,borderRadius:20,padding:18,marginBottom:14,boxShadow:`0 4px 20px ${C.shadow}`}}>
+            {img&&<img src={img} style={{width:"100%",height:150,objectFit:"cover",borderRadius:14,marginBottom:14}} alt="captured"/>}
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+              <span style={{fontSize:44}}>{result.emoji||"📦"}</span>
+              <div>
+                <p style={{margin:0,fontWeight:800,fontSize:15,color:C.text}}>{result.name}</p>
+                {result.brand&&<p style={{margin:"2px 0",fontSize:12,color:C.muted}}>by {result.brand}</p>}
+                <span style={{background:`${C.navy}14`,color:C.navy,borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700}}>{result.cat}</span>
+              </div>
+            </div>
+            <div style={{background:C.bg,borderRadius:12,padding:"10px 14px"}}>
+              <p style={{margin:"0 0 4px",fontSize:12,fontWeight:700,color:C.text}}>💡 Info Penyimpanan</p>
+              <p style={{margin:"0 0 4px",fontSize:12,color:C.muted}}>{result.store}</p>
+              <p style={{margin:0,fontSize:12,color:C.muted}}>⏰ {result.exp}</p>
+            </div>
+          </div>
+          <div style={{background:C.card,borderRadius:20,padding:18,marginBottom:14}}>
+            <h3 style={{margin:"0 0 14px",fontSize:15,fontWeight:800,color:C.text}}>Simpan ke Storage</h3>
+            <div style={{display:"flex",gap:10,marginBottom:10}}>
+              <div style={{flex:1}}><p style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:4}}>Jumlah</p><input type="number" value={sf.qty} min={1} onChange={e=>setSf(p=>({...p,qty:parseFloat(e.target.value)||1}))} style={{...inp,padding:"9px 12px"}}/></div>
+              <div style={{flex:1}}><p style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:4}}>Satuan</p><input value={sf.unit} onChange={e=>setSf(p=>({...p,unit:e.target.value}))} style={{...inp,padding:"9px 12px"}}/></div>
+            </div>
+            {sections.length>0&&<div style={{marginBottom:10}}>
+              <p style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:6}}>📍 Sekat Kulkas</p>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {sections.map(s=><button key={s} onClick={()=>setSf(p=>({...p,section:s}))} style={{background:sf.section===s?`${C.navy}22`:C.card2,border:`1.5px solid ${sf.section===s?C.navy:C.border}`,borderRadius:20,padding:"4px 10px",fontSize:11,fontWeight:700,color:sf.section===s?C.navy:C.muted,cursor:"pointer"}}>{s}</button>)}
+              </div>
+            </div>}
+            <div style={{marginBottom:16}}><p style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:4}}>Tanggal Kadaluarsa *</p><input type="date" value={sf.expiryDate} onChange={e=>setSf(p=>({...p,expiryDate:e.target.value}))} style={{...inp,padding:"9px 12px"}}/></div>
+            <button onClick={save} style={btnP}>✓ Simpan ke Storage</button>
+          </div>
+          <button onClick={reset} style={{width:"100%",background:"none",border:`1.5px solid ${C.border}`,borderRadius:14,padding:"12px",color:C.muted,fontWeight:700,cursor:"pointer"}}>Scan Ulang</button>
+        </div>)}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SETTINGS MODAL
+// ═══════════════════════════════════════════════════════════════════
+function SettingsModal({settings,setSettings,C,stock,setStock,onClose}){
+  const[s,setS]=useState({...settings});
+  const save=()=>{setSettings(s);onClose();};
+  const tog=k=>setS(p=>({...p,[k]:!p[k]}));
+  const pick=(k,v)=>setS(p=>({...p,[k]:v}));
+  const THEMES={navy:"🔵 Navy",ocean:"🩵 Ocean",forest:"🟢 Forest",purple:"🟣 Purple",sunset:"🟠 Sunset"};
+  const Toggle=({on,onT})=>(
+    <div onClick={onT} style={{width:44,height:24,borderRadius:12,background:on?C.orange:C.border,cursor:"pointer",position:"relative",transition:"background .2s",flexShrink:0}}>
+      <div style={{position:"absolute",top:3,left:on?21:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left .2s",boxShadow:"0 1px 4px rgba(0,0,0,.2)"}}/>
+    </div>
+  );
+  const Chips=({opts,val,pick:p})=>(
+    <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end",maxWidth:220}}>
+      {opts.map(o=><button key={o.v} onClick={()=>p(o.v)} style={{background:val===o.v?C.orange:C.card2,border:`1.5px solid ${val===o.v?C.orange:C.border}`,borderRadius:20,padding:"4px 10px",fontSize:11,fontWeight:700,color:val===o.v?"#fff":C.text,cursor:"pointer"}}>{o.l}</button>)}
+    </div>
+  );
+  const Row=({l,sub,r,last})=>(
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:last?"none":`1px solid ${C.border}`}}>
+      <div><p style={{margin:0,fontSize:13,fontWeight:700,color:C.text}}>{l}</p>{sub&&<p style={{margin:"2px 0 0",fontSize:11,color:C.muted}}>{sub}</p>}</div>
+      {r}
+    </div>
+  );
+  const Sec=({title,children})=>(
+    <div style={{marginBottom:18}}>
+      <p style={{fontSize:11,fontWeight:800,color:C.muted,textTransform:"uppercase",letterSpacing:.8,marginBottom:8,paddingLeft:4}}>{title}</p>
+      <div style={{background:C.card,borderRadius:16,overflow:"hidden",boxShadow:`0 2px 10px ${C.shadow}`}}>{children}</div>
+    </div>
+  );
+  return(
+    <div style={{position:"fixed",inset:0,background:C.overlay,zIndex:200,display:"flex",alignItems:"flex-end"}}>
+      <div className="slide-up" style={{background:C.bg,borderRadius:"24px 24px 0 0",width:"100%",maxHeight:"93vh",overflowY:"auto"}}>
+        <div style={{background:`linear-gradient(135deg,${C.navy},${C.navyL})`,padding:"18px 16px",borderRadius:"24px 24px 0 0",position:"sticky",top:0,zIndex:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,color:"#fff"}}><Ic.Settings/><h2 style={{margin:0,fontSize:17,fontWeight:800}}>Setelan</h2></div>
+            <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:10,padding:8,cursor:"pointer",color:"#fff"}}><Ic.Close/></button>
+          </div>
+        </div>
+        <div style={{padding:"14px 14px 100px"}}>
+          <Sec title="🎨 Tampilan">
+            <Row l="Mode Gelap" sub="Tema hitam untuk malam hari" r={<Toggle on={s.darkMode} onT={()=>tog("darkMode")}/>}/>
+            <Row l="Warna Tema" r={<Chips opts={Object.entries(THEMES).map(([k,v])=>({v:k,l:v}))} val={s.theme} pick={v=>pick("theme",v)}/>}/>
+            <Row l="Ukuran Teks" r={<Chips opts={[{v:"small",l:"S"},{v:"medium",l:"M"},{v:"large",l:"L"}]} val={s.textSize} pick={v=>pick("textSize",v)}/>} last/>
+          </Sec>
+          <Sec title="📋 Stok">
+            <Row l="Tampilan Stok" r={<Chips opts={[{v:"grid",l:"▦ Grid"},{v:"list",l:"☰ List"}]} val={s.stockView} pick={v=>pick("stockView",v)}/>}/>
+            <Row l="Urutkan" r={<Chips opts={[{v:"exp",l:"📅 Expired"},{v:"name",l:"A-Z"},{v:"cat",l:"🏷️ Kat"}]} val={s.sortBy} pick={v=>pick("sortBy",v)}/>}/>
+            <Row l="Batas Peringatan" sub="Hari sebelum kadaluarsa" r={<Chips opts={[{v:3,l:"3"},{v:5,l:"5"},{v:7,l:"7"},{v:14,l:"14"}]} val={s.warnDays} pick={v=>pick("warnDays",v)}/>}/>
+            <Row l="Satuan Default" r={<Chips opts={[{v:"pcs",l:"pcs"},{v:"kg",l:"kg"},{v:"liter",l:"ltr"},{v:"buah",l:"buah"}]} val={s.defUnit} pick={v=>pick("defUnit",v)}/>}/>
+            <Row l="Badge Kadaluarsa" sub="Warna status di kartu stok" r={<Toggle on={s.showExpBadge} onT={()=>tog("showExpBadge")}/>} last/>
+          </Sec>
+          <Sec title="🎠 Resep">
+            <Row l="Auto-scroll Carousel" sub="Scroll otomatis kartu resep" r={<Toggle on={s.autoScroll} onT={()=>tog("autoScroll")}/>}/>
+            <Row l="Kecepatan Scroll" r={<Chips opts={[{v:"slow",l:"Lambat"},{v:"medium",l:"Normal"},{v:"fast",l:"Cepat"}]} val={s.scrollSpeed} pick={v=>pick("scrollSpeed",v)}/>} last/>
+          </Sec>
+          <Sec title="🔔 Notifikasi">
+            <Row l="Aktifkan Notifikasi" sub="Peringatan kadaluarsa" r={<Toggle on={s.notifEnabled} onT={()=>tog("notifEnabled")}/>}/>
+            <Row l="Tampilan Kompak" sub="Kartu stok lebih padat" r={<Toggle on={s.compactView} onT={()=>tog("compactView")}/>} last/>
+          </Sec>
+          <Sec title="⚠️ Data">
+            <Row l="Reset Stok" sub="Hapus semua data stok" r={<button onClick={()=>{if(window.confirm("Reset semua stok?"))setStock(SEED_STOCK);}} style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"6px 12px",color:C.red,fontSize:12,fontWeight:700,cursor:"pointer"}}>Reset</button>} last/>
+          </Sec>
+          <button onClick={save} style={{width:"100%",background:`linear-gradient(135deg,${C.navy},${C.navyL})`,border:"none",borderRadius:14,padding:"14px",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer"}}>✓ Simpan Setelan</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CHATBOT MODAL
+// ═══════════════════════════════════════════════════════════════════
+function ChatbotModal({C,stock,onClose}){
+  const[msgs,setMsgs]=useState([{role:"assistant",text:"Halo! Saya SmartSavior AI 🤖\n\nSaya bisa bantu:\n• Resep dari bahan yang kamu punya\n• Tips penyimpanan makanan\n• Pertanyaan seputar kulkas & stok\n\nMau tanya apa? 😊"}]);
+  const[input,setInput]=useState("");
+  const[loading,setLoading]=useState(false);
+  const bottomRef=useRef(null);
+
+  useEffect(()=>{bottomRef.current?.scrollIntoView({behavior:"smooth"});},[msgs]);
+
+  const send=async()=>{
+    if(!input.trim()||loading)return;
+    const q=input.trim();setInput("");
+    setMsgs(p=>[...p,{role:"user",text:q}]);
+    setLoading(true);
+    const stockCtx=stock.slice(0,8).map(i=>`${i.name} (${i.qty}${i.unit}, exp:${i.expiryDate})`).join(", ");
+    try{
+      const res=await fetch(API_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:600,system:`Kamu adalah SmartSavior AI, asisten cerdas manajemen kulkas dan dapur. Jawab dalam Bahasa Indonesia yang ramah dan singkat (max 150 kata). Stok kulkas user saat ini: ${stockCtx||"belum ada stok"}. Fokus pada topik: resep masakan, tips penyimpanan, pengelolaan stok makanan.`,messages:[...msgs.filter(m=>m.role!=="assistant"||msgs.indexOf(m)>0).map(m=>({role:m.role,content:m.text})),{role:"user",content:q}]})});
+      const d=await res.json();
+      const ans=d.content?.[0]?.text||"Maaf, ada gangguan. Coba lagi ya!";
+      setMsgs(p=>[...p,{role:"assistant",text:ans}]);
+    }catch{setMsgs(p=>[...p,{role:"assistant",text:"Maaf, koneksi terganggu. Coba lagi sebentar ya! 🙏"}]);}
+    setLoading(false);
+  };
+
+  return(
+    <div style={{position:"fixed",inset:0,background:C.overlay,zIndex:300,display:"flex",alignItems:"flex-end"}}>
+      <div className="slide-up" style={{background:C.card,borderRadius:"24px 24px 0 0",width:"100%",height:"80vh",display:"flex",flexDirection:"column"}}>
+        {/* Header */}
+        <div style={{background:`linear-gradient(135deg,${C.navy},${C.navyL})`,padding:"16px 18px",borderRadius:"24px 24px 0 0",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+          <div style={{width:40,height:40,borderRadius:"50%",background:"rgba(255,255,255,.18)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🤖</div>
+          <div style={{flex:1}}>
+            <h3 style={{color:"#fff",margin:0,fontSize:15,fontWeight:800}}>SmartSavior AI</h3>
+            <p style={{color:"rgba(255,255,255,.6)",margin:0,fontSize:11}}>Asisten dapur cerdasmu</p>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <a href={`https://wa.me/${WA_ADMIN}`} target="_blank" rel="noreferrer" style={{background:"#25D366",border:"none",borderRadius:10,padding:"7px 12px",color:"#fff",fontWeight:700,fontSize:11,textDecoration:"none",display:"flex",alignItems:"center",gap:4}}><Ic.WA/> Admin</a>
+            <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:10,padding:8,cursor:"pointer",color:"#fff"}}><Ic.Close/></button>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div style={{flex:1,overflowY:"auto",padding:"16px 14px",display:"flex",flexDirection:"column",gap:12,background:C.bg}}>
+          {msgs.map((m,i)=>(
+            <div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start",gap:8}}>
+              {m.role==="assistant"&&<div style={{width:30,height:30,borderRadius:"50%",background:`${C.navy}20`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>🤖</div>}
+              <div style={{maxWidth:"78%",background:m.role==="user"?`linear-gradient(135deg,${C.navy},${C.navyL})`:`${C.navy}12`,borderRadius:m.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px",padding:"10px 14px",color:m.role==="user"?"#fff":C.text,fontSize:13,lineHeight:1.5,whiteSpace:"pre-wrap"}}>
+                {m.text}
+              </div>
+            </div>
+          ))}
+          {loading&&(
+            <div style={{display:"flex",gap:8}}>
+              <div style={{width:30,height:30,borderRadius:"50%",background:`${C.navy}20`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🤖</div>
+              <div style={{background:`${C.navy}12`,borderRadius:"18px 18px 18px 4px",padding:"10px 16px",display:"flex",gap:4,alignItems:"center"}}>
+                {[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:"50%",background:C.navy,animation:`pulse .8s ${i*.15}s infinite`}}/>)}
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef}/>
+        </div>
+
+        {/* Input */}
+        <div style={{padding:"12px 14px 24px",background:C.card,borderTop:`1px solid ${C.border}`,display:"flex",gap:8,flexShrink:0}}>
+          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Tanya tentang resep, stok, penyimpanan..." style={{flex:1,border:`1.5px solid ${C.border}`,borderRadius:14,padding:"10px 14px",fontSize:13,outline:"none",color:C.text,background:C.bg}}/>
+          <button onClick={send} disabled={loading||!input.trim()} style={{background:input.trim()?`linear-gradient(135deg,${C.navy},${C.navyL})`:`${C.navy}40`,border:"none",borderRadius:14,padding:"10px 14px",color:"#fff",cursor:input.trim()?"pointer":"not-allowed"}}><Ic.Send/></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PROFILE SCREEN
+// ═══════════════════════════════════════════════════════════════════
+function ProfileScreen({user,setUser,C,onLogout,onShowChat}){
+  const[editing,setEditing]=useState(false);
+  const[eu,setEu]=useState({...user});
+  const[openFaq,setOpenFaq]=useState(null);
+  const photoRef=useRef(null);
+  const ePRef=useRef(null);
+  const age=calcAge(user.dob);
+
+  const saveUser=()=>{
+    const users=SS.get("ss_users",[]);
+    const updated=users.map(u=>u.username===user.username?{...u,...eu}:u);
+    SS.set("ss_users",updated);
+    SS.set("ss_current_user",eu.username);
+    setUser(eu);setEditing(false);
+  };
+  const handlePhoto=(e,isEdit)=>{
+    const f=e.target.files[0];if(!f)return;
+    const r=new FileReader();
+    r.onload=ev=>{
+      if(isEdit)setEu(u=>({...u,photo:ev.target.result}));
+      else{
+        const nu={...user,photo:ev.target.result};
+        const users=SS.get("ss_users",[]);
+        SS.set("ss_users",users.map(u=>u.username===user.username?{...u,photo:ev.target.result}:u));
+        setUser(nu);
+      }
+    };r.readAsDataURL(f);
+  };
+  const fmtDob=d=>{if(!d)return"-";try{return new Date(d).toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"});}catch{return d;}};
+  const inp={width:"100%",border:`1.5px solid ${C.border}`,borderRadius:12,padding:"10px 14px",fontSize:14,outline:"none",color:C.text,background:C.card};
+  const FAQS=[
+    {q:"Bagaimana cara kerja AI Scan?",a:"AI Scan menganalisis foto kemasan produk secara otomatis. Sistem mengidentifikasi nama, merek, kategori, dan saran penyimpanan."},
+    {q:"Kenapa kamera tidak bisa diakses?",a:"Kamera membutuhkan koneksi HTTPS. Buka via link Netlify (bukan dari file lokal) agar kamera aktif."},
+    {q:"Apakah data tersimpan permanen?",a:"Ya! Data disimpan di browser via localStorage. Tetap ada selama kamu tidak clear cache browser."},
+    {q:"Bagaimana sistem peringatan kadaluarsa?",a:"Sistem menghitung mundur setiap hari. Batas peringatan bisa diatur di Setelan (3-14 hari). Hijau = aman, Kuning = mendekati, Merah = kritis."},
+    {q:"Apa itu sekat kulkas?",a:"Fitur sekat membantu kamu mengetahui item ada di bagian mana di kulkas — freezer, rak atas, laci sayuran, dll. Sesuai jenis kulkasmu."},
+    {q:"Cara ganti bahasa atau tema?",a:"Buka Setelan (ikon gear di halaman Home). Tersedia pilihan tema warna, mode gelap, dan berbagai preferensi lainnya."},
+    {q:"Bisa untuk bisnis UMKM?",a:"Tentu! Cocok untuk warteg, kantin, catering, dan bisnis kuliner kecil yang butuh sistem pelacakan stok sederhana."},
+  ];
+
+  return(
+    <div style={{paddingBottom:90,minHeight:"100vh",background:C.bg}}>
+      {/* Header */}
+      <div style={{background:`linear-gradient(150deg,${C.navy},${C.navyL})`,padding:"52px 18px 26px",borderRadius:"0 0 30px 30px",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",top:-30,right:-30,width:140,height:140,borderRadius:"50%",background:"rgba(255,255,255,.05)"}}/>
+        <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
+          <div style={{position:"relative",cursor:"pointer",flexShrink:0}} onClick={()=>photoRef.current?.click()}>
+            {user.photo
+              ?<img src={user.photo} style={{width:74,height:74,borderRadius:"50%",objectFit:"cover",border:"3px solid rgba(255,255,255,.5)"}} alt="foto"/>
+              :<div style={{width:74,height:74,borderRadius:"50%",background:"rgba(255,255,255,.18)",border:"3px solid rgba(255,255,255,.3)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:34}}>👤</div>
+            }
+            <div style={{position:"absolute",bottom:2,right:2,width:22,height:22,borderRadius:"50%",background:C.orange,border:"2px solid #fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11}}>📷</div>
+            <input ref={photoRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>handlePhoto(e,false)}/>
+          </div>
+          <div style={{flex:1}}>
+            <h2 style={{color:"#fff",margin:0,fontSize:19,fontWeight:900,lineHeight:1.1}}>{user.name}</h2>
+            <p style={{color:"rgba(255,255,255,.6)",margin:"2px 0",fontSize:12}}>@{user.username}</p>
+            <div style={{display:"flex",gap:7,marginTop:6,flexWrap:"wrap"}}>
+              {age&&<span style={{background:"rgba(255,255,255,.18)",color:"#fff",borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700}}>🎂 {age} tahun</span>}
+              <span style={{background:"rgba(255,255,255,.14)",color:"rgba(255,255,255,.85)",borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:600}}>🧊 Kulkas {FRIDGE_TYPES[user.fridgeType||"2"]?.label}</span>
+            </div>
+          </div>
+          <button onClick={()=>{setEu({...user});setEditing(true);}} style={{background:"rgba(255,255,255,.18)",border:"1.5px solid rgba(255,255,255,.3)",borderRadius:10,padding:"7px 12px",color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>Edit</button>
+        </div>
+      </div>
+
+      <div style={{padding:"14px 14px 0"}}>
+        {/* Info card */}
+        <div style={{background:C.card,borderRadius:16,overflow:"hidden",marginBottom:14,boxShadow:`0 2px 10px ${C.shadow}`}}>
+          {[["📱 Nomor HP",user.phone||"-"],["📧 Email",user.email||"-"],["🎂 Tanggal Lahir",fmtDob(user.dob)],["👤 Usia",age?`${age} tahun`:"-"],["🧊 Jenis Kulkas",FRIDGE_TYPES[user.fridgeType||"2"]?.label||"-"]].map(([l,v],i,arr)=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 16px",borderBottom:i<arr.length-1?`1px solid ${C.border}`:"none"}}>
+              <span style={{fontSize:13,color:C.muted,fontWeight:600}}>{l}</span>
+              <span style={{fontSize:13,color:C.text,fontWeight:700,maxWidth:"55%",textAlign:"right",wordBreak:"break-all"}}>{v}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Chat buttons */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+          <button onClick={onShowChat} style={{background:`linear-gradient(135deg,${C.navy},${C.navyL})`,border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}>
+            <Ic.Bot/> AI Chatbot
+          </button>
+          <a href={`https://wa.me/${WA_ADMIN}`} target="_blank" rel="noreferrer" style={{background:"linear-gradient(135deg,#128C7E,#25D366)",border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:7,textDecoration:"none"}}>
+            <Ic.WA/> Chat Admin
+          </a>
+        </div>
+
+        {/* About */}
+        <div style={{background:`linear-gradient(135deg,${C.navy}0A,${C.orange}12)`,border:`1.5px solid ${C.border}`,borderRadius:18,padding:"16px",marginBottom:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+            <span style={{fontSize:26}}>🧠</span>
+            <div><p style={{margin:0,fontWeight:900,fontSize:16,color:C.navy}}>Smart<span style={{color:C.orange}}>Savior</span></p><p style={{margin:0,fontSize:11,color:C.muted}}>Kelompok Batmen · Binus University</p></div>
+          </div>
+          <p style={{margin:"0 0 10px",fontSize:12,color:C.text2,lineHeight:1.65}}>Solusi cerdas manajemen stok makanan berbasis AI & QR Code. Cegah food waste mulai dari dapur Anda.</p>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {["SDG 12 🌱","SDG 9 ⚙️","Zero Food Waste 🍽️","AI-Powered 🤖"].map(t=><span key={t} style={{background:`${C.navy}10`,color:C.navy,borderRadius:20,padding:"3px 10px",fontSize:10,fontWeight:700}}>{t}</span>)}
+          </div>
+        </div>
+
+        {/* FAQ */}
+        <h3 style={{fontSize:14,fontWeight:800,color:C.text,marginBottom:10}}>❓ FAQ</h3>
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+          {FAQS.map((f,i)=>(
+            <div key={i} style={{background:C.card,borderRadius:14,overflow:"hidden",boxShadow:`0 1px 8px ${C.shadow}`}}>
+              <button onClick={()=>setOpenFaq(openFaq===i?null:i)} style={{width:"100%",background:"none",border:"none",padding:"13px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",textAlign:"left"}}>
+                <span style={{fontSize:13,fontWeight:700,color:C.text,flex:1,paddingRight:8,lineHeight:1.4}}>{f.q}</span>
+                <span style={{color:C.orange,fontWeight:800,fontSize:20,transform:openFaq===i?"rotate(45deg)":"none",transition:"transform .2s",flexShrink:0}}>+</span>
+              </button>
+              {openFaq===i&&<div style={{padding:"0 16px 14px"}}><p style={{margin:0,fontSize:12,color:C.muted,lineHeight:1.7}}>{f.a}</p></div>}
+            </div>
+          ))}
+        </div>
+
+        <button onClick={onLogout} style={{width:"100%",background:"#FEF2F2",border:"1.5px solid #FECACA",borderRadius:14,padding:"13px",color:C.red,fontWeight:800,fontSize:14,cursor:"pointer",marginBottom:24,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+          <Ic.Logout/> Logout
+        </button>
+      </div>
+
+      {/* Edit Modal */}
+      {editing&&(
+        <div style={{position:"fixed",inset:0,background:C.overlay,zIndex:200,display:"flex",alignItems:"flex-end"}}>
+          <div className="slide-up" style={{background:C.card,borderRadius:"24px 24px 0 0",padding:"22px 18px 44px",width:"100%",maxHeight:"92vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
+              <h3 style={{margin:0,fontWeight:800,fontSize:17,color:C.text}}>Edit Profil</h3>
+              <button onClick={()=>setEditing(false)} style={{background:C.card2,border:"none",borderRadius:10,padding:8,cursor:"pointer"}}><Ic.Close/></button>
+            </div>
+            {/* Photo */}
+            <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:8}}>Foto Profil</p>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,padding:"12px 14px",background:C.bg,borderRadius:14}}>
+              {eu.photo?<img src={eu.photo} style={{width:54,height:54,borderRadius:"50%",objectFit:"cover"}} alt="preview"/>:<div style={{width:54,height:54,borderRadius:"50%",background:C.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>👤</div>}
+              <div style={{flex:1}}>
+                <button onClick={()=>ePRef.current?.click()} style={{background:C.navy,border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>📷 Upload Foto</button>
+                {eu.photo&&<button onClick={()=>setEu(u=>({...u,photo:null}))} style={{background:"none",border:"none",color:C.red,fontSize:11,fontWeight:700,cursor:"pointer",marginLeft:8}}>Hapus</button>}
+              </div>
+              <input ref={ePRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>handlePhoto(e,true)}/>
+            </div>
+            {[["Nama Lengkap","name","text"],["Email","email","email"],["Nomor HP","phone","tel"]].map(([l,k,t])=>(
+              <div key={k} style={{marginBottom:11}}>
+                <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:4}}>{l}</p>
+                <input type={t} value={eu[k]||""} onChange={e=>setEu(u=>({...u,[k]:e.target.value}))} style={inp}/>
+              </div>
+            ))}
+            <div style={{marginBottom:14}}>
+              <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:4}}>Tanggal Lahir</p>
+              <input type="date" value={eu.dob||""} onChange={e=>setEu(u=>({...u,dob:e.target.value}))} style={inp}/>
+              {eu.dob&&<p style={{fontSize:11,color:C.muted,marginTop:4}}>🎂 Usia: {calcAge(eu.dob)||"-"} tahun</p>}
+            </div>
+            <div style={{marginBottom:20}}>
+              <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:8}}>Jenis Kulkas</p>
+              {Object.entries(FRIDGE_TYPES).map(([k,v])=>(
+                <button key={k} onClick={()=>setEu(u=>({...u,fridgeType:k}))} style={{width:"100%",background:eu.fridgeType===k?`${C.navy}18`:C.card2,border:`1.5px solid ${eu.fridgeType===k?C.navy:C.border}`,borderRadius:12,padding:"10px 14px",marginBottom:7,cursor:"pointer",display:"flex",alignItems:"center",gap:10,textAlign:"left"}}>
+                  <span style={{fontSize:22}}>{v.emoji}</span>
+                  <div style={{flex:1}}><p style={{margin:0,fontSize:13,fontWeight:700,color:C.text}}>{v.label}</p><p style={{margin:0,fontSize:11,color:C.muted}}>{v.desc}</p></div>
+                  {eu.fridgeType===k&&<div style={{color:C.orange}}><Ic.Check/></div>}
+                </button>
+              ))}
+            </div>
+            <button onClick={saveUser} style={{width:"100%",background:`linear-gradient(135deg,${C.navy},${C.navyL})`,border:"none",borderRadius:14,padding:"14px",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer"}}>Simpan Perubahan ✓</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════════════════════════════
+const DEF_SETTINGS={darkMode:false,theme:"navy",warnDays:7,stockView:"grid",sortBy:"exp",textSize:"medium",autoScroll:true,scrollSpeed:"medium",defUnit:"pcs",showExpBadge:true,notifEnabled:true,compactView:false};
+
+function MainApp({user,setUser,onLogout}){
+  const[tab,setTab]=useState("home");
+  const[stock,setStock]=useState(()=>{
+    const k=`ss_stock_${user.username}`;
+    return SS.get(k,SEED_STOCK);
+  });
+  const[settings,setSettings]=useState(()=>SS.get(`ss_settings_${user.username}`,DEF_SETTINGS));
+  const[showStorage,setShowStorage]=useState(false);
+  const[showSettings,setShowSettings]=useState(false);
+  const[showChat,setShowChat]=useState(false);
+
+  useEffect(()=>{SS.set(`ss_stock_${user.username}`,stock);},[stock,user.username]);
+  useEffect(()=>{SS.set(`ss_settings_${user.username}`,settings);},[settings,user.username]);
+
+  const C=makeC(settings.darkMode,settings.theme);
+  const sections=FRIDGE_TYPES[user.fridgeType||"2"]?.sections||FRIDGE_TYPES["2"].sections;
+
+  return(
+    <div style={{maxWidth:430,margin:"0 auto",minHeight:"100vh",background:C.bg,position:"relative",overflow:"hidden",fontSize:settings.textSize==="small"?"12px":settings.textSize==="large"?"16px":"14px"}}>
+      <style>{`
+        *{box-sizing:border-box}
+        ::-webkit-scrollbar{display:none}
+        input,button,select{font-family:inherit}
+        @keyframes scanLine{0%,100%{top:5%}50%{top:88%}}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.08)}}
+      `}</style>
+
+      {tab==="home"&&<HomeScreen stock={stock} user={user} settings={settings} C={C} sections={sections} onOpenStorage={()=>setShowStorage(true)} onOpenSettings={()=>setShowSettings(true)} onGoProfile={()=>setTab("profile")}/>}
+      {tab==="scan"&&<ScanScreen stock={stock} setStock={setStock} C={C} settings={settings} sections={sections}/>}
+      {tab==="profile"&&<ProfileScreen user={user} setUser={setUser} C={C} onLogout={onLogout} onShowChat={()=>setShowChat(true)}/>}
+
+      <BottomNav active={tab} setActive={setTab} C={C} showChat={showChat} setShowChat={setShowChat}/>
+
+      {showStorage&&<StorageModal stock={stock} setStock={setStock} C={C} settings={settings} sections={sections} onClose={()=>setShowStorage(false)}/>}
+      {showSettings&&<SettingsModal settings={settings} setSettings={setSettings} C={C} stock={stock} setStock={setStock} onClose={()=>setShowSettings(false)}/>}
+      {showChat&&<ChatbotModal C={C} stock={stock} onClose={()=>setShowChat(false)}/>}
+
+      {/* Floating Chat Button */}
+      {!showChat&&tab==="home"&&(
+        <button onClick={()=>setShowChat(true)} style={{position:"fixed",bottom:90,right:16,width:50,height:50,borderRadius:"50%",background:`linear-gradient(135deg,${C.navy},${C.navyL})`,border:"none",cursor:"pointer",boxShadow:`0 4px 16px ${C.navy}60`,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50}}>
+          <Ic.Bot/>
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ROOT APP
+// ═══════════════════════════════════════════════════════════════════
+function App(){
+  const[appState,setAppState]=useState("splash"); // splash | auth | onboarding | main
+  const[currentUser,setCurrentUser]=useState(null);
+
+  useEffect(()=>{
+    // Check if already logged in
+    const username=SS.get("ss_current_user");
+    if(username){
+      const users=SS.get("ss_users",[]);
+      const user=users.find(u=>u.username===username);
+      if(user){setCurrentUser(user);setAppState(user.onboardingDone?"main":"onboarding");}
+    }
+  },[]);
+
+  const handleLogin=(user)=>{
+    setCurrentUser(user);
+    setAppState(user.onboardingDone?"main":"onboarding");
+  };
+
+  const handleOnboardingDone=(data)=>{
+    const users=SS.get("ss_users",[]);
+    const updated={...currentUser,...data,onboardingDone:true};
+    SS.set("ss_users",users.map(u=>u.username===currentUser.username?updated:u));
+    setCurrentUser(updated);
+    setAppState("main");
+  };
+
+  const handleLogout=()=>{
+    if(!window.confirm("Yakin mau logout?"))return;
+    SS.del("ss_current_user");
+    setCurrentUser(null);
+    setAppState("auth");
+  };
+
+  const updateUser=(u)=>{
+    setCurrentUser(u);
+    const users=SS.get("ss_users",[]);
+    SS.set("ss_users",users.map(x=>x.username===u.username?u:x));
+  };
+
+  if(appState==="splash")return <SplashScreen onDone={()=>{const u=SS.get("ss_current_user");if(u){const users=SS.get("ss_users",[]);const usr=users.find(x=>x.username===u);if(usr){setCurrentUser(usr);setAppState(usr.onboardingDone?"main":"onboarding");return;}}setAppState("auth");}}/>;
+  if(appState==="auth")return <AuthScreen onLogin={handleLogin}/>;
+  if(appState==="onboarding"&&currentUser)return <OnboardingScreen user={currentUser} onDone={handleOnboardingDone}/>;
+  if(appState==="main"&&currentUser)return <MainApp user={currentUser} setUser={updateUser} onLogout={handleLogout}/>;
+  return null;
+}
+
+ReactDOM.render(<App/>, document.getElementById('root'));
+</script>
+</body>
+</html>
