@@ -1,2 +1,0 @@
-# smartsavior1
-Prototipe
